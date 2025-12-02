@@ -9,97 +9,140 @@ neo4j_driver = get_neo4j_driver()
 CONTEXT_THRESHOLD = 6000
 
 
-def retrieve_context(query: str, session_id: str, k: str = 10) -> str:
+def retrieve_context(query: str, session_id: str, k: int = 10) -> str:
+    """
+    Retrieve context by first filtering by session_id, then computing similarity.
+    Includes robust error handling for edge cases.
+    """
     try:
         logger.info(f"Embedding query: {query}")
         query_embedding = get_embeddings([query])[0]
-
-        # staritn session
+        logger.info(f"Generated embedding with {len(query_embedding)} dimensions")
+        
         with neo4j_driver.session() as session:
-            # Fetching top 
+
+            logger.info(f"Searching for nodes in session: {session_id}")
+            
             result = session.run(
                 """
-                CALL db.index.vector.queryNodes("code_embeddings", $k, $query_vector)
-                YIELD node, score
-                WHERE node.session_id = $session_id
+                MATCH (node:CodeNode)
+                WHERE node.session_id = $session_id 
+                  AND node.embedding IS NOT NULL
+                WITH node, 
+                     gds.similarity.cosine(node.embedding, $query_vector) AS score
                 RETURN node, score
                 ORDER BY score DESC
+                LIMIT $k
                 """,
-                query_vector=query_embedding,
                 session_id=session_id,
+                query_vector=query_embedding,
                 k=k
             )
-
-            top_nodes = [record["node"] for record in result]
+            
+            records = list(result)
+            
+            if not records:
+                logger.warning(f"No nodes found for session {session_id}")
+                return f"Query: {query}\n\nNo relevant nodes found for this session."
+            
+            top_nodes = [record["node"] for record in records]
+            scores = [record["score"] for record in records]
+            
             logger.info(f"Top nodes found: {len(top_nodes)}")
-
-            if not top_nodes:
-                return f"Query: {query}\nNo relevant nodes found."
-
+            
             top_ids = [node["id"] for node in top_nodes]
-
-            # Fetch neighbours
+            
+            logger.info(f"Fetching neighbors for {len(top_ids)} nodes...")
             rel_result = session.run(
                 """
                 MATCH (n:CodeNode)
                 WHERE n.session_id = $session_id AND n.id IN $top_ids
-
                 MATCH (n)-[r]->(m:CodeNode)
                 WHERE m.session_id = $session_id
-
-                RETURN n AS source_node, m AS target_node, type(r) AS rel_type
+                RETURN m AS target_node, type(r) AS rel_type
                 """,
                 top_ids=top_ids,
                 session_id=session_id
             )
-
-            # Collect unique related nodes (avoid duplicates)
+            
             related_nodes = []
-            seen_ids = set()
-
+            seen_ids = set(top_ids)
+            
             for record in rel_result:
                 m = record["target_node"]
                 if m["id"] not in seen_ids:
                     related_nodes.append(m)
                     seen_ids.add(m["id"])
-
-            logger.info(f"Related outward neighbor nodes: {len(related_nodes)}")
-
-
-        all_nodes = top_nodes + [n for n in related_nodes if n not in top_nodes]
-
-        context_parts = ""
-        current_length = len(context_parts)
-        nodes_added = 0
-
-        for node in all_nodes:
-            block = f"""
-                Name: {node['name']}
-                Type: {node['ast_type']}
-                File: {node['file']}
-                Code: {node['code_str']}
-                """
-            block = "\n---------------------------------------------------------------------------\n" + block
-
-            block_len = len(block)
-
-            if current_length + block_len > CONTEXT_THRESHOLD:
-                logger.info(
-                    f"Threshold reached. Added {nodes_added} nodes out of {len(all_nodes)}"
-                )
-                break
-
-            context_parts += block
-            current_length += block_len
-            nodes_added += 1
-
-
-        logger.info(f"Final context length: {current_length} (nodes added: {nodes_added})")
-        return context_parts
-
-    except Exception as e:
-        logger.error(f"Retrieval error: {e}")
+            
+            logger.info(f"Found {len(related_nodes)} related neighbor nodes")
+            
+            all_nodes = top_nodes + related_nodes
+            logger.info(f"Total nodes to process: {len(all_nodes)}")
+            
+            context_parts = ""
+            current_length = 0
+            nodes_added = 0
+            
+            for node in all_nodes:
+                name = node.get('name', 'unknown')
+                ast_type = node.get('ast_type', 'unknown')
+                file_path = node.get('file', 'unknown')
+                code_str = node.get('code_str', '')
+                
+                block = f"""
+                        Name: {name}
+                        Type: {ast_type}
+                        File: {file_path}
+                        Code: {code_str}
+                        """
+                block = "\n" + "-" * 75 + "\n" + block
+                block_len = len(block)
+                
+                if current_length + block_len > CONTEXT_THRESHOLD:
+                    logger.info(
+                        f"Threshold reached. Added {nodes_added} nodes out of {len(all_nodes)}"
+                    )
+                    break
+                
+                context_parts += block
+                current_length += block_len
+                nodes_added += 1
+            
+            logger.info(f"Final context: {current_length} chars, {nodes_added} nodes")
+            
+            if not context_parts.strip():
+                logger.warning("Context is empty after building")
+                return f"Query: {query}\n\nNo context could be built within threshold."
+            
+            return context_parts
+            
+    except HTTPException:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to Fetch context from neo4j! | Error : {str(e)}"
+            detail=f"Issue in context retrieval storage | Error {e}"
         )
+        
+    except Exception as e:
+        logger.error(f"Retrieval error: {e}", exc_info=True)
+        
+        # Check if it's a GDS function error
+        error_msg = str(e).lower()
+        if "gds.similarity.cosine" in error_msg or "unknown function" in error_msg:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Neo4j GDS similarity function not available. "
+                    "Please install Neo4j Graph Data Science library or use Python-based similarity search."
+                )
+            )
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch context from Neo4j! | Error: {str(e)}"
+        )
+
+
+
+# print(retrieve_context("what is this codebase all about", "f8bf52ef-5ba7-4435-b25b-ca28bd03549f"))
+# TEST_SESSION_ID = "f8bf52ef-5ba7-4435-b25b-ca28bd03549f"
+# run_all_tests(TEST_SESSION_ID)
