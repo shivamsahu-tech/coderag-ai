@@ -16,7 +16,7 @@ export default function ChatPage() {
       {
         id: 1,
         type: 'bot',
-        content: "Hi! I'm your CodeRAG AI assistant. I've analyzed your repository and I'm ready to help you understand your codebase. What would you like to know?",
+        content: "Hi! I'm your CodeRAG Agent assistant. I've analyzed your repository and I'm ready to help you understand your codebase. What would you like to know?",
         timestamp: new Date()
       }
     ]);
@@ -46,9 +46,11 @@ export default function ChatPage() {
           headers: {
             "Content-Type": "application/json"
           },
+          credentials: "include",
           body: JSON.stringify({ session_id: sessionId, query: query })
         })
         const res = await result.json();
+        console.log("retreive api response", res);
         if (result.ok && res.status === "success") {
             console.log("chat responded", res.llm_response);
             return res.llm_response;
@@ -132,7 +134,7 @@ export default function ChatPage() {
                 <MessageSquare className="h-6 w-6 text-white" />
               </div>
               <div onClick={() => goingOut()} >
-                <h1 className="text-xl font-bold text-white">CodeRAG AI Chat</h1>
+                <h1 className="text-xl font-bold text-white">CodeRAG Agent Chat</h1>
               </div>
             </div>
             

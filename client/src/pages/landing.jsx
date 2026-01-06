@@ -1,4 +1,4 @@
-import { Code, Database, Github, MessageCircle, Zap, MessageSquare, Hash, ArrowRight } from 'lucide-react';
+import { Code, Database, Github, MessageCircle, Zap, MessageSquare, Hash, ArrowRight, Brain, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import LoadingPage from './Loading';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,10 @@ export default function Landing() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState("")
   const navigate = useNavigate()
+
+  useEffect(() => {
+    Alert("We are using Gemini Free tier API, So if limit already hit, you will not able to use this app.");
+  }, []);
 
 
   const joinSession = () => {
@@ -87,7 +91,7 @@ export default function Landing() {
                 <Code className="h-6 w-6 text-white" />
               </div>
               <h1 className="text-2xl font-bold text-white">
-                CodeRAG AI
+                CodeRAG Agent
               </h1>
             </div>
             <div className={`flex space-x-6 transform transition-all duration-1000 delay-200 ${
@@ -271,7 +275,7 @@ export default function Landing() {
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold text-white mb-4 animate-fade-in">Perfect For</h2>
             <p className="text-xl text-gray-300 max-w-2xl mx-auto animate-fade-in-up">
-              Whether you're onboarding, debugging, or exploring, CodeRAG AI adapts to your needs
+              Whether you're onboarding, debugging, or exploring, CodeRAG Agent adapts to your needs
             </p>
           </div>
           
@@ -312,7 +316,9 @@ export default function Landing() {
                 {[
                   { icon: Code, title: "Intelligent Code Search", desc: "Find functions, classes, and patterns using natural language queries instead of exact syntax matching." },
                   { icon: Database, title: "Context-Aware Responses", desc: "Get answers that understand your entire codebase context, not just isolated code snippets." },
-                  { icon: Zap, title: "Lightning Fast", desc: "Powered by advanced vector embeddings for instant responses, even on large repositories." }
+                  { icon: Brain, title: "Agentic Retrieval", desc: "Autonomous AI agents intelligently search and retrieve relevant code snippets, documentation, and patterns across your repository." },
+                  { icon: Clock, title: "Chat Memories", desc: "Conversations are remembered across sessions, providing consistent context and building on previous discussions for deeper insights." },
+                  { icon: Zap, title: "Lightning Fast", desc: "Powered by advanced vector embeddings for instant responses, even on large repositories." },
                 ].map((feature, index) => (
                   <div key={index} className="flex items-start space-x-4 group hover:scale-105 transition-all duration-300">
                     <div className="bg-gradient-to-r from-blue-500/20 to-purple-600/20 p-3 rounded-lg flex-shrink-0 group-hover:shadow-lg group-hover:shadow-blue-500/30 transition-all duration-300">
@@ -332,19 +338,22 @@ export default function Landing() {
                   <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
                   <div className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
                   <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" style={{ animationDelay: '1s' }}></div>
-                  <span className="ml-4 text-sm animate-typing">CodeRAG AI Chat</span>
+                  <span className="ml-4 text-sm animate-typing">CodeRAG Agent Chat</span>
                 </div>
                 <div className="bg-gray-800 rounded-lg p-4 space-y-3 border border-gray-700">
-                  <div className="text-blue-400 animate-fade-in">You:</div>
-                  <div className="text-gray-300 animate-typing">"How does the authentication system work?"</div>
-                  <div className="text-green-400 mt-4 animate-fade-in" style={{ animationDelay: '2s' }}>AI:</div>
-                  <div className="text-gray-300 " >The authentication system uses JWT tokens with a middleware pattern. Here's the flow:
+                    <div className="text-blue-400 animate-fade-in">You:</div>
+                    <div className="text-gray-300 animate-typing">"Find all places where we handle payment processing and show me potential race conditions"</div>
+                    <div className="text-green-400 mt-4 animate-fade-in" style={{ animationDelay: '2s' }}>AI:</div>
+                    <div className="text-gray-300"> The authentication system uses JWT tokens with a middleware pattern. Here's the flow: <br />
 
-1. User credentials are validated in `auth/login.js`
-2. JWT token is generated using the secret in `config/auth.js`  
-3. Protected routes use `middleware/auth.js` to verify tokens
+                    1. `services/payment.js` Line 45: Missing transaction lock during balance check <br />
+                    2. `api/checkout.js` Line 128: Concurrent order creation without mutex <br />
+                    3. `webhooks/stripe.js` Line 67: Event handling lacks idempotency key validation <br />
+                    4. `models/Order.js` Line 203: Status update lacks optimistic locking mechanism <br />
+                    5. `utils/refund.js` Line 89: Refund amount calculation reads stale inventory data <br />
+                    6. `controllers/subscription.js` Line 156: Renewal process allows duplicate charges
 
-Would you like me to show you the specific implementation details?</div>
+                    All of these could cause data inconsistencies under high load. I can show you the exact code patterns and suggest atomic operation fixes with database-level locking. Want to dive deeper into any specific file?</div>
                 </div>
               </div>
             </div>
@@ -382,7 +391,7 @@ Would you like me to show you the specific implementation details?</div>
                 <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-2 rounded-lg animate-glow">
                   <Code className="h-6 w-6 text-white" />
                 </div>
-                <h3 className="text-2xl font-bold">CodeRAG AI</h3>
+                <h3 className="text-2xl font-bold">CodeRAG Agent</h3>
               </div>
               <p className="text-gray-400 mb-6 max-w-md">
                 Making codebases more accessible through intelligent AI-powered conversations. 
@@ -417,7 +426,7 @@ Would you like me to show you the specific implementation details?</div>
             </div>
           </div>
           <div className="border-t border-gray-800 mt-12 pt-8 text-center animate-fade-in">
-            <p className="text-gray-400">&copy; 2024 CodeRAG AI. All rights reserved.</p>
+            <p className="text-gray-400">&copy; 2024 CodeRAG Agent. All rights reserved.</p>
           </div>
         </div>
       </footer>
