@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Info, Database, PlayCircle, User, X, MessageSquare, ExternalLink } from 'lucide-react';
 
 export default function WelcomeModal() {
   const [isOpen, setIsOpen] = useState(true);
+  const navigate = useNavigate();
 
   const handleClose = () => {
     setIsOpen(false);
@@ -11,6 +13,11 @@ export default function WelcomeModal() {
   if (!isOpen) return null;
 
   const sessionId = import.meta.env.VITE_CODEBASE_SESSION_ID || "30e82929-e82f-4ed0-9463-2da67d8a5ea8";
+
+  const handleStartChat = () => {
+    if (!sessionId) return;
+    navigate(`/chat/${sessionId}`);
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-md animate-fade-in">
@@ -45,9 +52,17 @@ export default function WelcomeModal() {
                 <span className="text-blue-400 font-bold">3.</span>
                 <div className="flex-1">
                   <p className="mb-2"><span className="text-white font-semibold">Demo Chat:</span> Try chatting with this coderag repository using this session ID or click START:</p>
-                  <div className="bg-gray-900 border border-gray-700 p-2 rounded flex justify-between items-center group">
-                    <code className="text-purple-400 font-mono text-xsSelection">{sessionId}</code>
-                    <MessageSquare className="h-4 w-4 text-gray-600 group-hover:text-purple-500 transition-colors" />
+                  <div className="bg-gray-900 border border-gray-700 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 group">
+                    <div className="text-left min-w-0">
+                      <p className="text-xs text-gray-400 mb-1">Session ID</p>
+                      <code className="block text-purple-300 font-mono text-xs break-all whitespace-normal max-w-full">{sessionId}</code>
+                    </div>
+                    <button
+                      onClick={handleStartChat}
+                      className="text-xs sm:text-sm text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 py-1.5 px-3 sm:px-4 rounded-lg font-semibold transition-transform transform hover:-translate-y-0.5 active:scale-95 whitespace-nowrap"
+                    >
+                      Start
+                    </button>
                   </div>
                 </div>
               </div>
