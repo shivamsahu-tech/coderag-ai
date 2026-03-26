@@ -76,5 +76,19 @@ def run_retreival_pipeline(session_id: str, query: str, user_id: str = "dfsd") -
         config=config
     )
 
-    return response["messages"][-1].content
+    # 4. Extract content and ensure it's a string
+    res_msg = response["messages"][-1]
+    content = res_msg.content
+
+    if isinstance(content, list):
+        # Handle cases where content is a list of blocks (common in some Gemini versions)
+        text_content = ""
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text_content += part.get("text", "")
+            elif isinstance(part, str):
+                text_content += part
+        return text_content
+    
+    return str(content) if content is not None else ""
 

@@ -13,20 +13,20 @@ export default function ChatPage() {
   const { sessionId } = useParams()
 
   const [messages, setMessages] = useState([
-      {
-        id: 1,
-        type: 'bot',
-        content: "Hi! I'm your CodeRAG Agent assistant. I've analyzed your repository and I'm ready to help you understand your codebase. What would you like to know?",
-        timestamp: new Date()
-      }
-    ]);
+    {
+      id: 1,
+      type: 'bot',
+      content: "Hi! I'm your CodeRAG Agent assistant. I've analyzed your repository and I'm ready to help you understand your codebase. What would you like to know?",
+      timestamp: new Date()
+    }
+  ]);
 
 
   useEffect(() => {
     const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-    if(!uuidRegex.test(sessionId)){
-       alert("Please enter a valid session id")
-       navigator("/")
+    if (!uuidRegex.test(sessionId)) {
+      alert("Please enter a valid session id")
+      navigator("/")
     }
     setIsVisible(true);
     inputRef.current?.focus();
@@ -41,27 +41,27 @@ export default function ChatPage() {
     const url = `${import.meta.env.VITE_SERVER_URL}/api/retreive`
 
     try {
-        const result = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          credentials: "include",
-          body: JSON.stringify({ session_id: sessionId, query: query })
-        })
-        const res = await result.json();
-        console.log("retreive api response", res);
-        if (result.ok && res.status === "success") {
-            console.log("chat responded", res.llm_response);
-            return res.llm_response;
-          } else {
-            console.error("Error processing repo:", res);
-            alert("Please try again or contact with the maintainer!!!");
-          }
-      } catch (error) {
-        console.error("Network error:", error);
-        alert("Server not reachable!");
+      const result = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify({ session_id: sessionId, query: query })
+      })
+      const res = await result.json();
+      console.log("retreive api response", res);
+      if (result.ok && res.status === "success") {
+        console.log("chat responded", res.llm_response);
+        return res.llm_response;
+      } else {
+        console.error("Error processing repo:", res);
+        alert("Please try again or contact with the maintainer!!!");
       }
+    } catch (error) {
+      console.error("Network error:", error);
+      alert("Server not reachable!");
+    }
   }
 
   const handleSendMessage = async (e) => {
@@ -82,14 +82,14 @@ export default function ChatPage() {
     const llmResponse = await chat(userQuery)
 
     const botMessage = {
-        id: Date.now() + 1,
-        type: 'bot',
-        content: llmResponse,
-        timestamp: new Date()
-      };
+      id: Date.now() + 1,
+      type: 'bot',
+      content: llmResponse,
+      timestamp: new Date()
+    };
 
-      setMessages(prev => [...prev, botMessage]);
-      setIsTyping(false);
+    setMessages(prev => [...prev, botMessage]);
+    setIsTyping(false);
   };
 
   const clearChat = () => {
@@ -106,7 +106,7 @@ export default function ChatPage() {
   return (
     <div className="min-h-screen bg-gray-900 relative overflow-hidden">
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#374151_1px,transparent_1px),linear-gradient(to_bottom,#374151_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_110%)] animate-pulse"></div>
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-purple-900/10 to-gray-900/20 animate-gradient-x"></div>
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-purple-900/10 to-gray-900/20 animate-gradient-x"></div>
 
       <div className="absolute inset-0 pointer-events-none">
         {[...Array(15)].map((_, i) => (
@@ -127,9 +127,8 @@ export default function ChatPage() {
       <header className="bg-gray-800/90 backdrop-blur-md border-b border-gray-700 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            <div className={`flex items-center space-x-3 transform transition-all duration-1000 ${
-              isVisible ? 'translate-x-0 opacity-100' : '-translate-x-10 opacity-0'
-            }`}>
+            <div className={`flex items-center space-x-3 transform transition-all duration-1000 ${isVisible ? 'translate-x-0 opacity-100' : '-translate-x-10 opacity-0'
+              }`}>
               <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-2 rounded-lg animate-glow">
                 <MessageSquare className="h-6 w-6 text-white" />
               </div>
@@ -137,11 +136,10 @@ export default function ChatPage() {
                 <h1 className="text-xl font-bold text-white">CodeRAG Agent Chat</h1>
               </div>
             </div>
-            
-            <div className={`flex items-center space-x-4 transform transition-all duration-1000 delay-200 ${
-              isVisible ? 'translate-x-0 opacity-100' : 'translate-x-10 opacity-0'
-            }`}>
-              <button 
+
+            <div className={`flex items-center space-x-4 transform transition-all duration-1000 delay-200 ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-10 opacity-0'
+              }`}>
+              <button
                 onClick={clearChat}
                 className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-300 hover:scale-110"
                 title="Clear Chat"
@@ -161,27 +159,24 @@ export default function ChatPage() {
 
       {/* Chat Container */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative z-10">
-        <div className={`bg-gray-800/30 backdrop-blur-sm rounded-2xl border border-gray-700 shadow-2xl transform transition-all duration-1000 delay-300 ${
-          isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
-        }`} style={{ height: 'calc(100vh - 200px)' }}>
-          
+        <div className={`bg-gray-800/30 backdrop-blur-sm rounded-2xl border border-gray-700 shadow-2xl transform transition-all duration-1000 delay-300 ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
+          }`} style={{ height: 'calc(100vh - 200px)' }}>
+
           {/* Messages Area */}
           <div className="flex flex-col h-full">
             <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
               {messages.map((message, index) => (
                 <div
                   key={message.id}
-                  className={`flex items-start space-x-4 animate-slide-in-up ${
-                    message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-                  }`}
+                  className={`flex items-start space-x-4 animate-slide-in-up ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+                    }`}
                   style={{ animationDelay: `${index * 100}ms` }}
                 >
                   {/* Avatar */}
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                    message.type === 'bot' 
-                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 animate-glow' 
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${message.type === 'bot'
+                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 animate-glow'
                       : 'bg-gradient-to-r from-green-500 to-teal-600'
-                  }`}>
+                    }`}>
                     {message.type === 'bot' ? (
                       <Bot className="h-5 w-5 text-white" />
                     ) : (
@@ -190,21 +185,18 @@ export default function ChatPage() {
                   </div>
 
                   {/* Message Content */}
-                  <div className={`flex-1 max-w-3xl ${
-                    message.type === 'user' ? 'text-right' : ''
-                  }`}>
-                    <div className={`inline-block p-4 rounded-2xl shadow-lg transform hover:scale-[1.02] transition-all duration-300 ${
-                      message.type === 'bot'
+                  <div className={`flex-1 max-w-3xl ${message.type === 'user' ? 'text-right' : ''
+                    }`}>
+                    <div className={`inline-block p-4 rounded-2xl shadow-lg transform hover:scale-[1.02] transition-all duration-300 ${message.type === 'bot'
                         ? 'bg-gray-700/50 border border-gray-600 text-gray-100 rounded-tl-sm'
                         : 'bg-gray-700/50 border border-gray-600 text-gray-100 rounded-tr-sm'
-                    }`}>
+                      }`}>
                       <div>
                         <MarkdownLoader content={message.content} />
                       </div>
                     </div>
-                    <p className={`text-xs text-gray-500 mt-2 ${
-                      message.type === 'user' ? 'text-right' : 'text-left'
-                    }`}>
+                    <p className={`text-xs text-gray-500 mt-2 ${message.type === 'user' ? 'text-right' : 'text-left'
+                      }`}>
                       {message.timestamp.toLocaleTimeString()}
                     </p>
                   </div>
@@ -228,7 +220,7 @@ export default function ChatPage() {
                   </div>
                 </div>
               )}
-              
+
               <div ref={messagesEndRef} />
             </div>
 
@@ -255,7 +247,7 @@ export default function ChatPage() {
                   <Send className="h-5 w-5" />
                 </button>
               </form>
-              
+
               {/* Quick Actions
               <div className="mt-4 flex flex-wrap gap-2">
                 {[

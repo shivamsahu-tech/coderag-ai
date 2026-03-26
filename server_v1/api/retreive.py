@@ -35,7 +35,7 @@ async def retreive_answer(
         query=request.query,
         user_id=user_id
     )
-    
+
     return {
         "status": "success",
         "llm_response": llm_response,

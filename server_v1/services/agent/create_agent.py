@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from services.agent.tools import retrieve_context_wrapper
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import SystemMessage
@@ -16,12 +16,12 @@ class State(TypedDict):
 
 # --- 2. Build the Graph (Run this ONCE) ---
 def build_agent_graph():
-    # A. Setup Gemini 2.5
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash", 
+    # A. Setup Groq (via LangChain)
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile", 
         temperature=0.5,
         max_tokens=1000,
-        api_key=os.getenv("LLM_API_KEY")
+        api_key=os.getenv("GROQ_API_KEY")
     )
 
     tools = [retrieve_context_wrapper]
@@ -59,6 +59,7 @@ def build_agent_graph():
         2. Do not hallucinate code. If you don't know, use the tool to find out, you can try max 3 times to extract the nodes, so you can get better output for the user query
         3. If the tool returns no results, ask the user to clarify their query.
         4. Keep your answers concise and technical. Any question beside the codeRAG or codebase, you will tell user that i am not able to provide resoponse for those questions
+        5. Your main goal is to provide best result FOR THE USER, you can update the user query that can retrieve best chunks on the basis of consine similarity. but that response should be accurate according to the user query, else just provide appropriate response. [REASONING].
         """)
         messages = [sys_msg] + state["messages"]
         return {"messages": [llm_with_tools.invoke(messages)]}

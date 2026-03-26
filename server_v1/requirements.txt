@@ -10,3 +10,4 @@ google-genai
 
 langchain 
 langchain-google-genai
+langchain-groq

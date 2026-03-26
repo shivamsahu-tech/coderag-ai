@@ -184,8 +184,8 @@ const progressSteps = [
                     <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 via-purple-600/5 to-blue-600/5 rounded-2xl"></div>
                     <div className="relative z-10">
                       <p className="text-slate-200 text-lg font-medium leading-relaxed">
-                       If your repo is too big, it will takes (no of chunks)/100 minutes <br />
-                        <span className="text-blue-400 font-normal">Because gemini free tier have rate limit 100 RPM</span>
+                        Analyzing and processing your repository with advanced RAG technology. <br />
+                        <span className="text-blue-400 font-normal">This may take a moment depending on the codebase complexity.</span>
                       </p>
                     </div>
                   </div>
