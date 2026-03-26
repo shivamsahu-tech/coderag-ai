@@ -131,7 +131,7 @@ clone_temp/
 models/
 
 
-**/.env*
-client/.env*
-server/.env*
+**/.env
+client/.env
+server/.env
 .env

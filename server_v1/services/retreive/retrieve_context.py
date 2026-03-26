@@ -1,5 +1,6 @@
+import os
 from core.logging import get_logger
-from services.llm.embedding import get_embeddings
+from services.llm.embedding_jina import get_embeddings
 from db.neo4j_client import get_neo4j_driver
 from fastapi import HTTPException
 
@@ -8,7 +9,6 @@ neo4j_driver = get_neo4j_driver()
 
 CONTEXT_THRESHOLD = 6000
 
-
 def retrieve_context(query: str, session_id: str, k: int = 10) -> str:
     """
     Retrieve context by first filtering by session_id, then computing similarity.
@@ -16,20 +16,26 @@ def retrieve_context(query: str, session_id: str, k: int = 10) -> str:
     """
     try:
         logger.info(f"Embedding query: {query}")
+        # This will automatically trigger task="nl2code.query" because len == 1
         query_embedding = get_embeddings([query])[0]
-        logger.info(f"Generated embedding with {len(query_embedding)} dimensions")
+        logger.info(f"Generated query embedding with {len(query_embedding)} dimensions")
         
-        with neo4j_driver.session() as session:
+        # --- KEY CHANGE 1: Grab the specific Aura database name ---
+        db_name = os.getenv("NEO4J_DATABASE", "neo4j")
+        
+        with neo4j_driver.session(database=db_name) as session:
 
             logger.info(f"Searching for nodes in session: {session_id}")
             
+            # --- KEY CHANGE 2: Replaced gds.similarity.cosine with vector.similarity.cosine ---
+            # Neo4j Aura Free doesn't have GDS installed, but has native vector math.
             result = session.run(
                 """
                 MATCH (node:CodeNode)
                 WHERE node.session_id = $session_id 
                   AND node.embedding IS NOT NULL
                 WITH node, 
-                     gds.similarity.cosine(node.embedding, $query_vector) AS score
+                     vector.similarity.cosine(node.embedding, $query_vector) AS score
                 RETURN node, score
                 ORDER BY score DESC
                 LIMIT $k
@@ -116,23 +122,23 @@ def retrieve_context(query: str, session_id: str, k: int = 10) -> str:
             
             return context_parts
             
-    except HTTPException:
+    # --- KEY CHANGE 3: Fixed missing 'as e' in exception handling ---
+    except HTTPException as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Issue in context retrieval storage | Error {e}"
+            detail=f"Issue in context retrieval storage | Error {e.detail}"
         )
         
     except Exception as e:
         logger.error(f"Retrieval error: {e}", exc_info=True)
         
-        # Check if it's a GDS function error
         error_msg = str(e).lower()
-        if "gds.similarity.cosine" in error_msg or "unknown function" in error_msg:
+        if "vector.similarity.cosine" in error_msg or "unknown function" in error_msg:
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    "Neo4j GDS similarity function not available. "
-                    "Please install Neo4j Graph Data Science library or use Python-based similarity search."
+                    "Neo4j vector similarity function failed. "
+                    "Ensure you are running Neo4j 5.0+ for native vector support."
                 )
             )
         

@@ -10,9 +10,9 @@ export default function Landing() {
   const [sessionId, setSessionId] = useState("")
   const navigate = useNavigate()
 
-  useEffect(() => {
-    Alert("We are using Gemini Free tier API, So if limit already hit, you will not able to use this app.");
-  }, []);
+  // useEffect(() => {
+  //   Alert("We are using Gemini Free tier API, So if limit already hit, you will not able to use this app.");
+  // }, []);
 
 
   const joinSession = () => {

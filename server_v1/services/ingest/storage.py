@@ -1,8 +1,9 @@
+import os
 from typing import List, Dict
 from core.logging import get_logger
-from services.llm.embedding import get_embeddings
 from db.neo4j_client import get_neo4j_driver
 from fastapi import HTTPException
+from services.llm.embedding_jina import get_embeddings
 
 logger = get_logger(__name__)
 
@@ -92,8 +93,11 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
         else:
             logger.warning("Failed to generate embeddings or count mismatch. Storing nodes without embeddings.")
 
-        # Starting storage process
-        with neo4j_driver.session() as session:
+        # --- KEY CHANGE 1: Grab the database name from your .env ---
+        db_name = os.getenv("NEO4J_DATABASE", "neo4j")
+
+        # --- KEY CHANGE 2: Inject the database name into the session ---
+        with neo4j_driver.session(database=db_name) as session:
             
             session.run(
                 """
@@ -124,7 +128,7 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                     FOR (n:CodeNode)
                     ON n.embedding
                     OPTIONS {indexConfig: {
-                        `vector.dimensions`: 768,
+                        `vector.dimensions`: 1536,  // --- KEY CHANGE 3: Updated to Jina's 1536 dimensions ---
                         `vector.similarity_function`: 'cosine'
                     }}
                     """
@@ -149,6 +153,7 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
             logger.info("Stored nodes + embeddings + all relationship types successfully.")
 
     except Exception as e:
+        logger.error(f"Failed in store_nodes_in_neo4j: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Issue in neo4j storage | Error {e}"

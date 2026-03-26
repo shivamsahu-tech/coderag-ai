@@ -1,3 +1,4 @@
+import os
 from typing import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
@@ -17,9 +18,10 @@ class State(TypedDict):
 def build_agent_graph():
     # A. Setup Gemini 2.5
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite", 
+        model="gemini-2.5-flash", 
         temperature=0.5,
-        max_tokens=1000
+        max_tokens=1000,
+        api_key=os.getenv("LLM_API_KEY")
     )
 
     tools = [retrieve_context_wrapper]
