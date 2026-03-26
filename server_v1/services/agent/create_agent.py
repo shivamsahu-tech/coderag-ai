@@ -18,7 +18,7 @@ class State(TypedDict):
 def build_agent_graph():
     # A. Setup Groq (via LangChain)
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile", 
+        model="meta-llama/llama-4-scout-17b-16e-instruct", 
         temperature=0.5,
         max_tokens=1000,
         api_key=os.getenv("GROQ_API_KEY")
