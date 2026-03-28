@@ -132,8 +132,8 @@ export default function ChatPage() {
               <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-2 rounded-lg animate-glow">
                 <MessageSquare className="h-6 w-6 text-white" />
               </div>
-              <div onClick={() => goingOut()} >
-                <h1 className="text-xl font-bold text-white">CodeRAG Agent Chat</h1>
+              <div onClick={() => navigator("/")}>
+                <h1 className="text-xl font-bold text-white hover:cursor-pointer">CodeRAG Agent Chat</h1>
               </div>
             </div>
 
