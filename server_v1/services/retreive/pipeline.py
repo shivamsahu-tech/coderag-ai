@@ -1,94 +1,107 @@
 from datetime import datetime, timedelta, timezone
-from services.agent.create_agent import agent_app
-# from services.retreive.retrieve_context import retrieve_context
-# from services.llm.prompt_template import template
-# from services.llm.query_enhancement import enhance_query
-# from services.llm.llm import chat
 from core.logging import get_logger
+from services.retreive.retrieve_context import retrieve_context
+from services.retreive.graph_context import get_neighbors
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 logger = get_logger(__name__)
 
 MEMORY_TIMEOUT_HOURS = 24
+MAX_HISTORY_TURNS = 6  # Keep last 6 turns (12 messages) to stay within context limits
 
-def perform_global_cleanup():
+# In-memory store: { user_id: { "messages": [...], "last_active": datetime } }
+_history_store: dict = {}
+
+SYSTEM_PROMPT = """You are an expert code assistant helping developers understand codebases.
+You will be given retrieved code context (functions, classes, methods) from a graph-based code index.
+Use that context to answer accurately. Always reference specific function names, file paths, and 
+code snippets. If the context doesn't have enough information, say so clearly rather than guessing."""
+
+
+def _cleanup_expired_sessions():
     try:
-        storage = agent_app.checkpointer.storage
-
-        if len(storage.items()) < 10:
-            return
-        
-        threads_to_delete = []
-        current_time = datetime.now(timezone.utc)
-        
-        
-        for thread_id, checkpoints in storage.items():
-            if not checkpoints:
-                threads_to_delete.append(thread_id)
-                continue
-
-            try:
-                latest_checkpoint_id = max(checkpoints.keys(), key=lambda k: checkpoints[k]['ts'])
-                latest_checkpoint = checkpoints[latest_checkpoint_id]
-                
-                last_active_str = latest_checkpoint.get('ts')
-                
-                if not last_active_str:
-                    continue
-                    
-                last_active_time = datetime.fromisoformat(last_active_str)
-                
-                if last_active_time.tzinfo is None:
-                    last_active_time = last_active_time.replace(tzinfo=timezone.utc)
-                
-                time_diff = current_time - last_active_time
-                if time_diff > timedelta(hours=MEMORY_TIMEOUT_HOURS):
-                    threads_to_delete.append(thread_id)
-            
-            except Exception as inner_e:
-                logger.warning(f"Error parsing thread {thread_id}: {inner_e}")
-                continue
-
-        if threads_to_delete:
-            logger.info(f"Memory Cleanup: removing {len(threads_to_delete)} expired sessions.")
-            for thread_id in threads_to_delete:
-                if thread_id in storage:
-                    del storage[thread_id]
-
+        now = datetime.now(timezone.utc)
+        expired = [
+            uid for uid, data in _history_store.items()
+            if now - data["last_active"] > timedelta(hours=MEMORY_TIMEOUT_HOURS)
+        ]
+        for uid in expired:
+            del _history_store[uid]
+        if expired:
+            logger.info(f"Memory cleanup: removed {len(expired)} expired sessions.")
     except Exception as e:
-        logger.error(f"Global memory cleanup failed: {e}")
+        logger.error(f"Session cleanup failed: {e}")
 
 
-
-def run_retreival_pipeline(session_id: str, query: str, user_id: str = "dfsd") -> str:
-    logger.info(f"Processing query for user: {user_id}, session: {session_id}")
-    
-    perform_global_cleanup()
-    config = {
-        "configurable": {
-            "thread_id": user_id,   
-            "session_id": session_id, 
-            "recursion_limit": 10
+def _get_history(user_id: str) -> list:
+    if user_id not in _history_store:
+        _history_store[user_id] = {
+            "messages": [],
+            "last_active": datetime.now(timezone.utc),
         }
-    }
+    _history_store[user_id]["last_active"] = datetime.now(timezone.utc)
+    return _history_store[user_id]["messages"]
 
-    response = agent_app.invoke(
-        {"messages": [("user", query)]},
-        config=config
+
+def _trim_history(messages: list) -> list:
+    """Keep only the last MAX_HISTORY_TURNS * 2 messages (user+assistant pairs)."""
+    max_msgs = MAX_HISTORY_TURNS * 2
+    return messages[-max_msgs:] if len(messages) > max_msgs else messages
+
+
+def run_retreival_pipeline(session_id: str, query: str, user_id: str = "default") -> str:
+    logger.info(f"Processing query for user: {user_id}, session: {session_id}")
+
+    _cleanup_expired_sessions()
+
+    # Step 1: Retrieve relevant code context from Neo4j (always deterministic)
+    try:
+        context = retrieve_context(query=query, session_id=session_id)
+    except Exception as e:
+        logger.error(f"Context retrieval failed: {e}", exc_info=True)
+        context = "Could not retrieve code context due to an error."
+
+    # Step 2: Load this user's chat history
+    history = _get_history(user_id)
+    trimmed_history = _trim_history(history)
+
+    # Step 3: Build the message list for the LLM
+    messages = [SystemMessage(content=SYSTEM_PROMPT)]
+    messages.extend(trimmed_history)
+
+    # Inject context into the current user message only (not into history storage)
+    augmented_user_message = (
+        f"<code_context>\n{context}\n</code_context>\n\n"
+        f"Question: {query}"
+    )
+    messages.append(HumanMessage(content=augmented_user_message))
+
+    # Step 4: Call LLM — NO tools, plain chat completion. Reliable on all Groq models.
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile",  # Best Groq model for complex reasoning
+        temperature=0.1,
+        max_tokens=2048,
     )
 
-    # 4. Extract content and ensure it's a string
-    res_msg = response["messages"][-1]
-    content = res_msg.content
+    try:
+        response = llm.invoke(messages)
+        answer = response.content
 
-    if isinstance(content, list):
-        # Handle cases where content is a list of blocks (common in some Gemini versions)
-        text_content = ""
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                text_content += part.get("text", "")
-            elif isinstance(part, str):
-                text_content += part
-        return text_content
-    
-    return str(content) if content is not None else ""
+        # Normalize content (can be list in some model versions)
+        if isinstance(answer, list):
+            answer = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in answer
+            )
+        answer = str(answer).strip() if answer else "I could not generate a response."
 
+    except Exception as e:
+        logger.error(f"LLM invocation failed: {e}", exc_info=True)
+        answer = f"An error occurred while generating the response: {str(e)}"
+
+    # Step 5: Save only the bare query (not the injected context) + answer to history
+    history.append(HumanMessage(content=query))
+    history.append(AIMessage(content=answer))
+
+    return answer

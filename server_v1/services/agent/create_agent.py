@@ -6,81 +6,117 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_groq import ChatGroq
-from services.agent.tools import retrieve_context_wrapper
+from langchain_core.messages import SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import SystemMessage
+from services.agent.tools import retrieve_context_wrapper, get_neighbors_wrapper
+from core.logging import get_logger
 
-# --- 1. Define State (The Memory) ---
+logger = get_logger(__name__)
+
+SYSTEM_PROMPT = """You are an expert Codebase Assistant.
+
+The codebase is indexed as a dependency graph (via tree-sitter). Each node has:
+  id, name, ast_type, file, code_str, calls, depth, language, session_id.
+
+Embeddings are built from: name | ast_type | code_str | file.
+
+HOW TO ANSWER:
+- YOU ARE FREE TO USE OR NOT USE THE TOOLS ACCORDING TO THE USER QUERY, YOU WILL SELECT THE BEST POSSIBLE TOOL TO ANSWER THE QUERY
+- IF YOU ARE NOT SATISFY WITH ANY TOOL RESPONSE, THEN YOU CAN AGAIN CALL TOOL WITH DIFFERENT PARAMETER TO PROVIDE BEST RESPONSE TO THE USER, MAX TOOL CALL 3
+- IF YOU ARE NOT ABLE TO ANSWER THE QUERY, THEN YOU CAN SAY I AM NOT ABLE TO ANSWER THE QUERY
+- DON'T ANSWER THE USER, IF HE IS ASKING ANY GENERALIZE QESTION THAT IS NOT RELATED WITH THE CODEBASE OR CODING.
+- YOU ARE FREE TO USER BEST APPROACH AND MODIFY THE USER'S QUERY ACCORDINGLY FOR BEST POSSIBLE RESPONSE.
+
+TOOL CALLING RULES (CRITICAL):
+- When calling a tool, output ONLY the tool call — nothing else.
+- Do NOT write "Let me check..." or any text before calling a tool.
+- Do NOT answer from memory. Always retrieve first.
+"""
+
 class State(TypedDict):
     messages: Annotated[list, add_messages]
 
-# --- 2. Build the Graph (Run this ONCE) ---
+
 def build_agent_graph():
-    # A. Setup Groq (via LangChain)
+    # llama-3.3-70b-versatile is significantly more reliable for tool use
+    # than the deprecated llama3-groq-70b-8192-tool-use-preview
     llm = ChatGroq(
-        model="meta-llama/llama-4-scout-17b-16e-instruct", 
-        temperature=0.5,
-        max_tokens=1000,
-        api_key=os.getenv("GROQ_API_KEY")
+        model="llama-3.3-70b-versatile",
+        temperature=0.0,
+        max_tokens=4096,  # Was 1000 — truncated responses were causing malformed tool JSON
+        api_key=os.getenv("GROQ_API_KEY"),
     )
 
-    tools = [retrieve_context_wrapper]
-    llm_with_tools = llm.bind_tools(tools)
+    tools = [retrieve_context_wrapper, get_neighbors_wrapper]
 
-    def chatbot(state: State):
-        
-        sys_msg = SystemMessage(content="""
-        You are an expert CodeBase Assistant for user .
-        
-        This codebase, is broken into the dependency graph with tree sitter, and here are each nodes structure : 
-            ast_type: elif_clause
-            calls: lower, extend, error, _extract_document_file, endswith
-            code_str: `elif include_docs and file.lower().endswith(DOC_EXTENSIONS): try: doc_nodes = _extract_document_file(file_path, relative_path) if doc_nodes: for node in doc_nodes: node_lookup[node['id']] = node file_to_nodes relative_path = [n['id'] for n in doc_nodes] all_nodes.extend(doc_nodes) stats['files_processed'] += 1 stats['nodes_extracted'] += len(doc_nodes) except Exception as e: logger.error(f"Doc error relative_path: e")
-            depth: 9
-            end_byte: 5346
-            end_line: 131
-            file: data/repos/f18d2f57-cf74-46a8-9ff0-850c3e2936ab/src/file_traversal.py
-            id: data/repos/f18d2f57-cf74-46a8-9ff0-850c3e2936ab/src/file_traversal.py:119:elif_clause
-            is_definition: false
-            language: python
-            name: elif_clause
-            session_id: 4d217bd9-e710-4021-9dba-3fe5f4dbc363
-            size: 666
-            start_byte: 4680
-            start_line: 120
+    # parallel_tool_calls=False prevents the model from attempting
+    # concurrent tool calls which Groq handles poorly
+    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
 
-        and in the embedding a string with collection of ast_type | code_str | file_name | name
-        is created so, your query in the retrieve_context tool will target the embeddings, related with it, so you are free to create reform the query so it can extract better nodes
-        YOUR GOAL:
-        Help the user understand their codebase by retrieving relevant context and explaining it clearly.
-        
-        INSTRUCTIONS:
-        1. Use the 'retrieve_context' tool, if the user asks about specific files, functions, or logic, you can enhance the user query if need
-        2. Do not hallucinate code. If you don't know, use the tool to find out, you can try max 3 times to extract the nodes, so you can get better output for the user query
-        3. If the tool returns no results, ask the user to clarify their query.
-        4. Keep your answers concise and technical. Any question beside the codeRAG or codebase, you will tell user that i am not able to provide resoponse for those questions
-        5. Your main goal is to provide best result FOR THE USER, you can update the user query that can retrieve best chunks on the basis of consine similarity. but that response should be accurate according to the user query, else just provide appropriate response. [REASONING].
-        """)
-        messages = [sys_msg] + state["messages"]
-        return {"messages": [llm_with_tools.invoke(messages)]}
-    
+    def chatbot(state: State, config: RunnableConfig):
+        messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
 
+        # Retry up to 3 times on tool_use_failed / BadRequestError
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = llm_with_tools.invoke(messages)
 
+                # Guard: if the model returned empty content with no tool calls,
+                # something went wrong — treat it as a retryable error
+                has_tool_calls = bool(getattr(response, "tool_calls", None))
+                has_content = bool(
+                    response.content
+                    if isinstance(response.content, str)
+                    else any(response.content)
+                )
+
+                if not has_tool_calls and not has_content:
+                    logger.warning(f"Empty response on attempt {attempt + 1}, retrying...")
+                    continue
+
+                return {"messages": [response]}
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+
+                # Only retry on Groq tool-generation failures
+                if "tool_use_failed" in error_str or "failed to call a function" in error_str:
+                    logger.warning(
+                        f"Tool call generation failed (attempt {attempt + 1}/3): {e}"
+                    )
+                    # Inject a corrective hint into history so the next attempt
+                    # knows the previous tool call was malformed
+                    messages.append(
+                        AIMessage(content="[Tool call failed. Retrying with a simpler query.]")
+                    )
+                    continue
+
+                # Non-retryable error — surface it immediately
+                logger.error(f"Non-retryable LLM error: {e}", exc_info=True)
+                raise
+
+        # All retries exhausted
+        logger.error(f"All 3 attempts failed. Last error: {last_error}")
+        fallback = AIMessage(
+            content=(
+                "I encountered repeated errors while trying to retrieve context. "
+                "Please try rephrasing your question or try again in a moment."
+            )
+        )
+        return {"messages": [fallback]}
 
     builder = StateGraph(State)
     builder.add_node("chatbot", chatbot)
     builder.add_node("tools", ToolNode(tools))
 
     builder.add_edge(START, "chatbot")
-    builder.add_conditional_edges(
-        "chatbot", 
-        tools_condition
-    )
+    builder.add_conditional_edges("chatbot", tools_condition)
     builder.add_edge("tools", "chatbot")
 
-    # F. Add Memory Persistence
     memory = MemorySaver()
     return builder.compile(checkpointer=memory)
 
-# Create the global agent instance
+
 agent_app = build_agent_graph()

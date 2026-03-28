@@ -1,41 +1,59 @@
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 from services.retreive.retrieve_context import retrieve_context
+from services.retreive.graph_context import get_neighbors
 
 
 @tool("retrieve_context")
 def retrieve_context_wrapper(query: str, config: RunnableConfig) -> str:
-    """    
-    Use this tool to answer questions about any questions related to YOUR CODEBASE.:
-    this tool provide you top nodes from codebase that is cosine similar to the query embeddings. so if you have any question you can prepare a query according to the user query thats embedding retireve best chunks from the db, because you know the chunks structure and there embeddings.
+    """
+    Searches the codebase and returns relevant code nodes (functions, classes,
+    methods, etc.) based on semantic similarity to the query.
+
+    Use this tool to answer ANY question about what code exists, how something
+    works, where something is defined, or what a function does.
 
     Args:
-        query (str): The question or query string for which context needs to be retrieved.
-        config (RunnableConfig): The runtime configuration containing metadata like session_id.
-    
+        query: A natural language description of what you are looking for.
+               Examples:
+                 - "getState method implementation"
+                 - "Redux store configuration"
+                 - "user authentication logic"
+                 - "how HTTP requests are sent"
+               Keep it concise and descriptive. Do NOT use structured syntax
+               like 'ast_type:X name:Y' — plain natural language works best.
+
     Returns:
-        a context string containing all the top relevant nodes related to the query.
-
-    eg: what is the codebase all about?
-
-    you prepare query: 'what is written in the readme file, where are the main functiosn defined?'
-
-    context = 
-    node: readme.md
-    code_str: This is a codeRAG applicaiton...........
-
-    node: main.py
-    code_str: def main(): .....
-
-
+        Formatted code nodes with: id, name, ast_type, file path, and source code.
     """
-    # 1. Securely extract the session_id (thread_id) from the runtime config
-    # This prevents the LLM from hallucinating a session ID.
     session_id = config["configurable"].get("session_id")
-    
-    if not session_id:
-        return "Error: No session ID found in the configuration. Cannot retrieve context."
 
-    # 2. Call the actual retrieval service
-    # This function uses cosine similarity on your AST node embeddings
+    if not session_id:
+        return "Error: No session_id in config. Cannot retrieve context."
+
     return retrieve_context(query=query, session_id=session_id)
+
+
+@tool("get_neighbors")
+def get_neighbors_wrapper(node_id: str, config: RunnableConfig) -> str:
+    """
+    Fetches all nodes directly connected to a given node in the code graph.
+    Use this to find what a function calls, or what other functions call it.
+
+    Call this AFTER retrieve_context, using the exact 'id' value from its output.
+
+    Args:
+        node_id: The exact 'id' field of the node from retrieve_context results.
+                 Example: "data/repos/abc123/src/store.ts:42:method_definition"
+                 Copy it exactly — do not modify or construct it yourself.
+
+    Returns:
+        All neighbor nodes with relationship type (INCOMING/OUTGOING), name,
+        ast_type, file, and a code snippet.
+    """
+    session_id = config["configurable"].get("session_id")
+
+    if not session_id:
+        return "Error: No session_id in config. Cannot fetch neighbors."
+
+    return get_neighbors(node_id=node_id, session_id=session_id)
