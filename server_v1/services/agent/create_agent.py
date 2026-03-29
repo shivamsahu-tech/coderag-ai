@@ -1,136 +1,193 @@
-import os
-from typing import Annotated
-from typing_extensions import TypedDict
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, AIMessage
-from langchain_core.runnables import RunnableConfig
-from services.agent.tools import retrieve_context_wrapper, get_neighbors_wrapper
-from core.logging import get_logger
+"""
+Manual Groq ReAct agent — no LangChain.
 
+Flow per request:
+  1. Load chat history from Redis (keyed by user_id)
+  2. Build messages: [system, ...history, user_msg]
+  3. Loop ≤ MAX_ITERATIONS:
+       a. POST to Groq /chat/completions with TOOL_DEFINITIONS
+       b. tool_calls present  → execute each tool, append results, continue
+       c. no tool_calls       → final text response, break
+  4. Save updated history back to Redis
+  5. Return the final assistant text
+"""
+import os
+import json
+import requests
+from dotenv import load_dotenv
+from core.logging import get_logger
+from db.redis_client import get_history, save_history
+from services.agent.tools import TOOL_DEFINITIONS, TOOL_MAP
+
+load_dotenv()
 logger = get_logger(__name__)
 
-SYSTEM_PROMPT = """You are an expert Codebase Assistant.
+_GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+_MODEL = "llama-3.3-70b-versatile"
+_MAX_ITERATIONS = 5  # max tool-call rounds per query
+
+SYSTEM_PROMPT = """You are an expert Codebase Assistant — a helpful, friendly AI that helps developers understand codebases.
+
+## RECALL HISTORY
+The user has previously asked the following questions (in order):
+{history_context}
+
+Use these previous questions to provide context if the current query refers to them (e.g., 'what was my last question?').
 
 The codebase is indexed as a dependency graph (via tree-sitter). Each node has:
   id, name, ast_type, file, code_str, calls, depth, language, session_id.
 
-Embeddings are built from: name | ast_type | code_str | file.
+## WHEN TO USE TOOLS
+- Use `retrieve_context` for ANY question about: code, functions, classes, files, imports, logic, architecture.
+- Use `get_neighbors` after `retrieve_context` to explore what a node calls or depends on.
+- Do NOT use tools for greetings, casual chat, or unrelated questions — just respond naturally.
 
-## RESPONSE QUALITY RULES
+## BE THOROUGH
+- Do NOT stop at the first tool result if it looks incomplete.
+- Chain `retrieve_context` → `get_neighbors` to trace full dependency paths.
+- You can call tools up to 5 times per turn — use them to build a complete answer.
+
+## RESPONSE FORMAT (CRITICAL)
 - **Structure**: Use `##` (H2) for major sections and `###` (H3) for sub-points. Use `---` (horizontal rules) between logical sections.
-- **Formatting**: Use **bold** for emphasis, lists for steps/features, and `tables` for comparing multiple items, files, or nodes.
-- **Synthesize**: Answer the user's actual question — don't dump raw tool output. Add code snippets and file references (e.g., `path/to/file.py`) when explaining code.
-- **Graceful Fail**: If you genuinely cannot find the answer in the codebase, say so clearly.
-
-## HOW TO DECIDE WHEN TO USE TOOLS
-
-**Use tools** when the user asks about:
-- What code exists, how something works, where something is defined
-- Functions, classes, methods, files, imports, dependencies
-- Any technical question about the indexed codebase
-
-**BE THOROUGH (CRITICAL)**:
-- Do NOT stop at the first tool result if it's incomplete.
-- Always use `get_neighbors` after `retrieve_context` if you need to understand how a function is called or what it depends on.
-- Continue calling tools if you discover new function names or file paths that seem relevant.
-- You have a limit of **max 5 tool calls** per turn — use them to ensure your answer is complete and accurate.
-
-## TOOL CALLING RULES
-- you can alter the user query, or you should so you can extract better context according to the database structure, because you know embedding structure very well
-- When calling a tool, output ONLY the tool call — no text before or after.
-- Do NOT write "Let me check..." before a tool call.
-- Only call tools when the question is about the codebase.
-- Do NOT answer from memory. Always retrieve first.
+- **Visual Hygiene**: Use **bold** for key terms, `tables` when comparing multiple files or nodes, and properly tagged code blocks for any code samples.
+- **Narrative**: Do NOT dump raw tool output. Synthesize the findings into a clear, natural explanation.
+- **Referencing**: Always mention exact file paths and function names.
+- **Markdown Rendering**: The response will be rendered in a professional markdown viewer—make it look premium.
 """
 
-class State(TypedDict):
-    messages: Annotated[list, add_messages]
 
+def _call_groq(messages: list[dict], use_tools: bool = True) -> dict:
+    """Make a single call to the Groq chat completions endpoint."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is missing from environment variables")
 
-def build_agent_graph():
-    # llama-3.3-70b-versatile is significantly more reliable for tool use
-    # than the deprecated llama3-groq-70b-8192-tool-use-preview
-    llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
-        temperature=0.0,
-        max_tokens=2048,  # 4096 was consuming ~7600 tokens/call (63% of 12K TPM limit). 2048 allows 2 agent calls/min.
-        api_key=os.getenv("GROQ_API_KEY"),
+    payload = {
+        "model": _MODEL,
+        "messages": messages,
+        "max_tokens": 2048,
+        "temperature": 0.0,
+    }
+    if use_tools:
+        payload["tools"] = TOOL_DEFINITIONS
+        payload["tool_choice"] = "auto"
+
+    resp = requests.post(
+        _GROQ_API_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=60,
     )
+    resp.raise_for_status()
+    return resp.json()
 
-    tools = [retrieve_context_wrapper, get_neighbors_wrapper]
 
-    # parallel_tool_calls=False prevents the model from attempting
-    # concurrent tool calls which Groq handles poorly
-    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
+def run_agent(query: str, session_id: str, user_id: str) -> str:
+    """
+    Run the manual ReAct loop for a single user turn.
 
-    def chatbot(state: State, config: RunnableConfig):
-        messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+    Args:
+        query:      The user's message.
+        session_id: The Neo4j session (codebase) to search in.
+        user_id:    Used to key Redis chat history.
 
-        # Retry up to 3 times on tool_use_failed / BadRequestError
-        last_error = None
-        for attempt in range(3):
+    Returns:
+        The assistant's final text response.
+    """
+    logger.info(f"Agent called | user={user_id} session={session_id} query={query!r}")
+
+    # 1. Load prior history from Redis
+    history = get_history(user_id, session_id)
+    logger.info(f"[Agent] Loaded {len(history)} messages from history for user {user_id} session {session_id}")
+
+    # 2. Format history into a readable list for the system prompt
+    history_lines = [f"- {m['content']}" for m in history if m.get("role") == "user"]
+    history_context = "\n".join(history_lines) if history_lines else "None (This is the beginning of the chat)."
+    
+    current_system_prompt = SYSTEM_PROMPT.format(history_context=history_context)
+
+    # 3. Build initial message list
+    messages: list[dict] = [
+        {"role": "system", "content": current_system_prompt},
+        {"role": "user", "content": query},
+    ]
+
+    final_answer = "I encountered an error generating a response. Please try again."
+
+    # 3. ReAct loop
+    for iteration in range(1, _MAX_ITERATIONS + 1):
+        logger.info(f"[Agent] Iteration {iteration}/{_MAX_ITERATIONS} | messages={len(messages)}")
+
+        try:
+            groq_response = _call_groq(messages)
+        except requests.HTTPError as e:
+            logger.error(f"[Agent] Groq HTTP error: {e.response.text}")
+            break
+        except Exception as e:
+            logger.error(f"[Agent] Groq call failed: {e}")
+            break
+
+        choice = groq_response["choices"][0]
+        message = choice["message"]
+        tool_calls = message.get("tool_calls")
+
+        # Always add assistant message to the running context
+        messages.append(message)
+
+        # ── No tool calls → final answer ──────────────────────────────────
+        if not tool_calls:
+            final_answer = message.get("content") or "No response generated."
+            logger.info(f"[Agent] Final answer at iteration {iteration}")
+            break
+
+        # ── Execute each requested tool ───────────────────────────────────
+        logger.info(f"[Agent] {len(tool_calls)} tool call(s) requested")
+        for call in tool_calls:
+            fn_name  = call["function"]["name"]
+            raw_args = call["function"]["arguments"]
+            call_id  = call["id"]
+
+            # Parse args (Groq may return a string or dict)
             try:
-                response = llm_with_tools.invoke(messages)
+                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            except json.JSONDecodeError:
+                args = {}
 
-                # Guard: if the model returned empty content with no tool calls,
-                # something went wrong — treat it as a retryable error
-                has_tool_calls = bool(getattr(response, "tool_calls", None))
-                has_content = bool(
-                    response.content
-                    if isinstance(response.content, str)
-                    else any(response.content)
-                )
+            logger.info(f"[Agent] Calling tool '{fn_name}' with args={args}")
 
-                if not has_tool_calls and not has_content:
-                    logger.warning(f"Empty response on attempt {attempt + 1}, retrying...")
-                    continue
+            fn = TOOL_MAP.get(fn_name)
+            if fn is None:
+                result = f"Error: unknown tool '{fn_name}'"
+            else:
+                try:
+                    # Inject session_id which the LLM doesn't know about
+                    result = fn(**args, session_id=session_id)
+                except Exception as e:
+                    result = f"Error executing {fn_name}: {e}"
+                    logger.error(f"[Agent] Tool error: {e}")
 
-                return {"messages": [response]}
+            logger.info(f"[Agent] Tool '{fn_name}' result length: {len(str(result))} chars")
 
-            except Exception as e:
-                last_error = e
-                error_str = str(e).lower()
+            # Append tool result in OpenAI format
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": fn_name,
+                "content": str(result),
+            })
 
-                # Only retry on Groq tool-generation failures
-                if "tool_use_failed" in error_str or "failed to call a function" in error_str:
-                    logger.warning(
-                        f"Tool call generation failed (attempt {attempt + 1}/3): {e}"
-                    )
-                    # Inject a corrective hint into history so the next attempt
-                    # knows the previous tool call was malformed
-                    messages.append(
-                        AIMessage(content="[Tool call failed. Retrying with a simpler query.]")
-                    )
-                    continue
+        # Loop continues — LLM will now see tool results and decide next step
 
-                # Non-retryable error — surface it immediately
-                logger.error(f"Non-retryable LLM error: {e}", exc_info=True)
-                raise
+    # 4. Save history: only user + assistant turns (not system/tool messages)
+    new_turn = [
+        {"role": "user", "content": query},
+        {"role": "assistant", "content": final_answer},
+    ]
+    updated_history = history + new_turn
+    save_history(user_id, session_id, updated_history)
+    logger.info(f"[Agent] Saved history for user {user_id} session {session_id}. Total turns: {len(updated_history) // 2}")
 
-        # All retries exhausted
-        logger.error(f"All 3 attempts failed. Last error: {last_error}")
-        fallback = AIMessage(
-            content=(
-                "I encountered repeated errors while trying to retrieve context. "
-                "Please try rephrasing your question or try again in a moment."
-            )
-        )
-        return {"messages": [fallback]}
-
-    builder = StateGraph(State)
-    builder.add_node("chatbot", chatbot)
-    builder.add_node("tools", ToolNode(tools))
-
-    builder.add_edge(START, "chatbot")
-    builder.add_conditional_edges("chatbot", tools_condition)
-    builder.add_edge("tools", "chatbot")
-
-    memory = MemorySaver()
-    return builder.compile(checkpointer=memory)
-
-
-agent_app = build_agent_graph()
+    return final_answer
