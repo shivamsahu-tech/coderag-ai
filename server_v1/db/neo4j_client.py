@@ -24,7 +24,9 @@ def get_neo4j_driver():
             # 1. Initialize the driver
             __neo4j_driver = GraphDatabase.driver(
                 neo4j_uri,
-                auth=(neo4j_username, neo4j_password)
+                auth=(neo4j_username, neo4j_password),
+                max_connection_lifetime=200, # Closes connections older than 200 seconds
+                keep_alive=True
             )
             
             # 2. Add this line: It actively pings the DB to ensure DNS and Auth are working

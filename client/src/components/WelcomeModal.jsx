@@ -43,13 +43,13 @@ export default function WelcomeModal() {
                 <p><span className="text-white font-semibold">Note:</span> This project doesn't require auth. Please <span className="text-blue-300">avoid ingesting very large repositories, because we are working on free tier.</span>.</p>
               </div>
 
-              <div className="flex gap-3">
+              {/* <div className="flex gap-3">
                 <span className="text-blue-400 font-bold">2.</span>
                 <p><span className="text-white font-semibold">Neo4j:</span> Aura instance pauses after 3 days. If you get an error, try again later; I'll be notified via email.</p>
-              </div>
+              </div> */}
 
               <div className="flex gap-3">
-                <span className="text-blue-400 font-bold">3.</span>
+                <span className="text-blue-400 font-bold">2.</span>
                 <div className="flex-1">
                   <p className="mb-2"><span className="text-white font-semibold">Demo Chat:</span> Try chatting with this coderag repository using this session ID or click START:</p>
                   <div className="bg-gray-900 border border-gray-700 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 group">
