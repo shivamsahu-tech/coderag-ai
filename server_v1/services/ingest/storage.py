@@ -1,9 +1,13 @@
 import os
+import time
 from typing import List, Dict
 from core.logging import get_logger
 from db.neo4j_client import get_neo4j_driver
 from fastapi import HTTPException
 from services.llm.embedding_jina import get_embeddings
+
+# Neo4j Aura free has ~512MB RAM — chunk large UNWIND operations to avoid OOM.
+_NEO4J_WRITE_CHUNK = 200
 
 logger = get_logger(__name__)
 
@@ -98,17 +102,23 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
 
         # --- KEY CHANGE 2: Inject the database name into the session ---
         with neo4j_driver.session(database=db_name) as session:
-            
-            session.run(
-                """
-                UNWIND $nodes AS node
-                CREATE (n:CodeNode)
-                SET n += node,
-                    n.session_id = $session_id
-                """,
-                nodes=flattened,
-                session_id=session_id
-            )
+
+            # --- Chunked node writes (avoid OOM on Aura free 512MB) ---
+            total_chunks = (len(flattened) + _NEO4J_WRITE_CHUNK - 1) // _NEO4J_WRITE_CHUNK
+            for chunk_i in range(0, len(flattened), _NEO4J_WRITE_CHUNK):
+                chunk = flattened[chunk_i : chunk_i + _NEO4J_WRITE_CHUNK]
+                chunk_num = chunk_i // _NEO4J_WRITE_CHUNK + 1
+                logger.info(f"Writing node chunk {chunk_num}/{total_chunks} ({len(chunk)} nodes)...")
+                session.run(
+                    """
+                    UNWIND $nodes AS node
+                    CREATE (n:CodeNode)
+                    SET n += node,
+                        n.session_id = $session_id
+                    """,
+                    nodes=chunk,
+                    session_id=session_id,
+                )
 
             # Add AST labels
             session.run(
@@ -117,10 +127,10 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                 CALL apoc.create.addLabels(n, [n.ast_type]) YIELD node
                 RETURN node
                 """,
-                session_id=session_id
+                session_id=session_id,
             )
 
-            # Create vector index (run once)
+            # Create vector index — dimension MUST match jina-code-embeddings-1.5b (1024)
             try:
                 session.run(
                     """
@@ -128,27 +138,33 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                     FOR (n:CodeNode)
                     ON n.embedding
                     OPTIONS {indexConfig: {
-                        `vector.dimensions`: 1536,  // --- KEY CHANGE 3: Updated to Jina's 1536 dimensions ---
+                        `vector.dimensions`: 1024,
                         `vector.similarity_function`: 'cosine'
                     }}
                     """
                 )
-                logger.info("Vector index created or already exists.")
+                logger.info("Vector index created or already exists (dim=1024).")
             except Exception as e:
                 logger.warning(f"Vector index creation warning (may already exist): {e}")
 
-            # Create dynamic relationships
-            session.run(
-                """
-                UNWIND $edges AS edge
-                MATCH (a:CodeNode {id: edge.source, session_id: $session_id})
-                MATCH (b:CodeNode {id: edge.target, session_id: $session_id})
-                CALL apoc.create.relationship(a, edge.type, {}, b) YIELD rel
-                RETURN rel
-                """,
-                edges=relationship_edges,
-                session_id=session_id
-            )
+            # --- Chunked relationship writes ---
+            if relationship_edges:
+                total_rel_chunks = (len(relationship_edges) + _NEO4J_WRITE_CHUNK - 1) // _NEO4J_WRITE_CHUNK
+                for chunk_i in range(0, len(relationship_edges), _NEO4J_WRITE_CHUNK):
+                    chunk = relationship_edges[chunk_i : chunk_i + _NEO4J_WRITE_CHUNK]
+                    chunk_num = chunk_i // _NEO4J_WRITE_CHUNK + 1
+                    logger.info(f"Writing relationship chunk {chunk_num}/{total_rel_chunks} ({len(chunk)} edges)...")
+                    session.run(
+                        """
+                        UNWIND $edges AS edge
+                        MATCH (a:CodeNode {id: edge.source, session_id: $session_id})
+                        MATCH (b:CodeNode {id: edge.target, session_id: $session_id})
+                        CALL apoc.create.relationship(a, edge.type, {}, b) YIELD rel
+                        RETURN rel
+                        """,
+                        edges=chunk,
+                        session_id=session_id,
+                    )
 
             logger.info("Stored nodes + embeddings + all relationship types successfully.")
 
