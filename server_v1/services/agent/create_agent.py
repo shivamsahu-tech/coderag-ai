@@ -19,6 +19,8 @@ from core.logging import get_logger
 from db.redis_client import get_history, save_history
 from services.agent.tools import TOOL_DEFINITIONS, TOOL_MAP
 
+import time
+
 load_dotenv()
 logger = get_logger(__name__)
 
@@ -27,6 +29,12 @@ _MODEL = "llama-3.3-70b-versatile"
 _MAX_ITERATIONS = 5  # max tool-call rounds per query
 
 SYSTEM_PROMPT = """You are an expert Codebase Assistant — a helpful, friendly AI that helps developers understand codebases.
+
+## TOKEN SAVING (CRITICAL)
+Your current rate limits are tight (12k tokens/min). 
+- BE CONCISE with your internal tool call queries.
+- Do NOT request more context than absolutely necessary.
+- Synthesize information efficiently.
 
 ## RECALL HISTORY
 The user has previously asked the following questions (in order):
@@ -57,7 +65,7 @@ The codebase is indexed as a dependency graph (via tree-sitter). Each node has:
 
 
 def _call_groq(messages: list[dict], use_tools: bool = True) -> dict:
-    """Make a single call to the Groq chat completions endpoint."""
+    """Make a single call to the Groq chat completions endpoint with retry logic."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY is missing from environment variables")
@@ -72,17 +80,37 @@ def _call_groq(messages: list[dict], use_tools: bool = True) -> dict:
         payload["tools"] = TOOL_DEFINITIONS
         payload["tool_choice"] = "auto"
 
-    resp = requests.post(
-        _GROQ_API_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                _GROQ_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=60,
+            )
+            
+            if resp.status_code == 429:
+                wait_time = (attempt + 1) * 3  # 3s, 6s, 9s backoff
+                logger.warning(f"[Agent] Rate limit hit (429). Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+                
+            resp.raise_for_status()
+            return resp.json()
+            
+        except requests.exceptions.HTTPError as e:
+            if resp.status_code != 429 or attempt == max_retries - 1:
+                raise e
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            time.sleep(2)
+            
+    raise Exception("Max retries reached for Groq API")
 
 
 def run_agent(query: str, session_id: str, user_id: str) -> str:

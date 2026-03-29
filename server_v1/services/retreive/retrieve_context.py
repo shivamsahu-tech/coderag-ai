@@ -7,7 +7,7 @@ from fastapi import HTTPException
 logger = get_logger(__name__)
 neo4j_driver = get_neo4j_driver()
 
-CONTEXT_THRESHOLD = 12000
+CONTEXT_THRESHOLD = 4000
 
 def retrieve_context(query: str, session_id: str, k: int = 10) -> str:
     """

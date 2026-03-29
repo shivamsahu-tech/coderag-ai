@@ -1,4 +1,4 @@
-import { Send, Bot, User, Code, MessageSquare, RotateCcw, Settings, Github } from 'lucide-react';
+import { Send, Bot, User, Code, MessageSquare, RotateCcw, Github, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import MarkdownLoader from '../components/markdownLoader';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -9,8 +9,9 @@ export default function ChatPage() {
   const [isVisible, setIsVisible] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const navigator = useNavigate()
-  const { sessionId } = useParams()
+  const scrollContainerRef = useRef(null);
+  const navigator = useNavigate();
+  const { sessionId } = useParams();
 
   const [messages, setMessages] = useState([
     {
@@ -20,49 +21,50 @@ export default function ChatPage() {
       timestamp: new Date()
     }
   ]);
-
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
   useEffect(() => {
     const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
     if (!uuidRegex.test(sessionId)) {
-      alert("Please enter a valid session id")
-      navigator("/")
+      alert("Please enter a valid session id");
+      navigator("/");
     }
     setIsVisible(true);
     inputRef.current?.focus();
-  }, []);
+  }, [sessionId, navigator]);
+
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 150;
+    setShowScrollButton(!isAtBottom);
+  };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
+    if (!showScrollButton) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, showScrollButton]);
 
   const chat = async (query) => {
-    const url = `${import.meta.env.VITE_SERVER_URL}/api/retreive`
-
+    const url = `${import.meta.env.VITE_SERVER_URL}/api/retreive`;
     try {
       const result = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ session_id: sessionId, query: query })
-      })
+      });
       const res = await result.json();
-      console.log("retreive api response", res);
       if (result.ok && res.status === "success") {
-        console.log("chat responded", res.llm_response);
         return res.llm_response;
-      } else {
-        console.error("Error processing repo:", res);
-        alert("Please try again or contact with the maintainer!!!");
       }
+      return "I encountered an error. Please check if the server is running.";
     } catch (error) {
       console.error("Network error:", error);
-      alert("Server not reachable!");
+      return "Network error. Please try again.";
     }
-  }
+  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -74,12 +76,12 @@ export default function ChatPage() {
       content: inputMessage,
       timestamp: new Date()
     };
-    const userQuery = inputMessage
+    const userQuery = inputMessage;
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsTyping(true);
 
-    const llmResponse = await chat(userQuery)
+    const llmResponse = await chat(userQuery);
 
     const botMessage = {
       id: Date.now() + 1,
@@ -93,22 +95,24 @@ export default function ChatPage() {
   };
 
   const clearChat = () => {
-    setMessages([
-      {
+    if (confirm("Clear chat?")) {
+      setMessages([{
         id: 1,
         type: 'bot',
-        content: "Chat cleared! I'm still here to help you understand your codebase. What would you like to explore?",
+        content: "Chat cleared! How can I help you now?",
         timestamp: new Date()
-      }
-    ]);
+      }]);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#374151_1px,transparent_1px),linear-gradient(to_bottom,#374151_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_110%)] animate-pulse"></div>
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-purple-900/10 to-gray-900/20 animate-gradient-x"></div>
+    <div className="min-h-screen bg-gray-900 relative overflow-hidden flex flex-col font-sans">
+      {/* Background Layer */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#374151_1px,transparent_1px),linear-gradient(to_bottom,#374151_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_110%)] animate-pulse pointer-events-none"></div>
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-purple-900/10 to-gray-900/20 animate-gradient-x pointer-events-none"></div>
 
-      <div className="absolute inset-0 pointer-events-none">
+      {/* Floating Particles */}
+      <div className="absolute inset-0 pointer-events-none z-0">
         {[...Array(15)].map((_, i) => (
           <div
             key={i}
@@ -124,32 +128,27 @@ export default function ChatPage() {
       </div>
 
       {/* Header */}
-      <header className="bg-gray-800/90 backdrop-blur-md border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <header className="bg-gray-900/95 backdrop-blur-xl border-b border-gray-800 fixed top-0 left-0 right-0 z-[100] shadow-2xl">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            <div className={`flex items-center space-x-3 transform transition-all duration-1000 ${isVisible ? 'translate-x-0 opacity-100' : '-translate-x-10 opacity-0'
-              }`}>
+            <div className={`flex items-center space-x-3 transform transition-all duration-1000 ${isVisible ? 'translate-x-0 opacity-100' : '-translate-x-10 opacity-0'}`}>
               <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-2 rounded-lg animate-glow">
                 <MessageSquare className="h-6 w-6 text-white" />
               </div>
-              <div onClick={() => navigator("/")}>
-                <h1 className="text-xl font-bold text-white hover:cursor-pointer">CodeRAG Agent Chat</h1>
+              <div onClick={() => navigator("/")} className="cursor-pointer">
+                <h1 className="text-xl font-bold text-white tracking-tight">CodeRAG Agent</h1>
               </div>
             </div>
 
-            <div className={`flex items-center space-x-4 transform transition-all duration-1000 delay-200 ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-10 opacity-0'
-              }`}>
+            <div className={`flex items-center space-x-4 transform transition-all duration-1000 delay-200 ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-10 opacity-0'}`}>
               <button
                 onClick={clearChat}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-300 hover:scale-110"
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all duration-300"
                 title="Clear Chat"
               >
                 <RotateCcw className="h-5 w-5" />
               </button>
-              {/* <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-300 hover:scale-110" title="Settings">
-                <Settings className="h-5 w-5" />
-              </button> */}
-              <a href='https://github.com/shivamsahu-tech/coderag-ai' target='_blank' className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-300 hover:scale-110" title="Repository">
+              <a href='https://github.com/shivamsahu-tech/coderag-ai' target='_blank' rel="noreferrer" className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all duration-300">
                 <Github className="h-5 w-5" />
               </a>
             </div>
@@ -157,167 +156,115 @@ export default function ChatPage() {
         </div>
       </header>
 
-      {/* Chat Container */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative z-10">
-        <div className={`bg-gray-800/30 backdrop-blur-sm rounded-2xl border border-gray-700 shadow-2xl transform transition-all duration-1000 delay-300 ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
-          }`} style={{ height: 'calc(100vh - 200px)' }}>
+      {/* Main Chat Area */}
+      <main className="flex-grow flex flex-col relative z-20 overflow-hidden pt-[73px] h-screen">
+        <div 
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-grow overflow-y-auto px-4 pt-10 pb-40 scroll-smooth scrollbar-hide"
+        >
+          <div className="max-w-5xl mx-auto space-y-12">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex items-start space-x-4 animate-slide-in-up ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}
+              >
+                {/* Avatar */}
+                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-lg ${
+                  message.type === 'bot'
+                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 animate-glow'
+                    : 'bg-gradient-to-r from-green-500 to-teal-600'
+                }`}>
+                  {message.type === 'bot' ? <Bot className="h-5 w-5 text-white" /> : <User className="h-5 w-5 text-white" />}
+                </div>
 
-          {/* Messages Area */}
-          <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-              {messages.map((message, index) => (
-                <div
-                  key={message.id}
-                  className={`flex items-start space-x-4 animate-slide-in-up ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-                    }`}
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  {/* Avatar */}
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${message.type === 'bot'
-                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 animate-glow'
-                      : 'bg-gradient-to-r from-green-500 to-teal-600'
-                    }`}>
-                    {message.type === 'bot' ? (
-                      <Bot className="h-5 w-5 text-white" />
-                    ) : (
-                      <User className="h-5 w-5 text-white" />
-                    )}
+                {/* Message Content */}
+                <div className={`flex flex-col ${message.type === 'user' ? 'items-end' : 'items-start'} max-w-[80%]`}>
+                  <div className={`inline-block p-4 rounded-2xl shadow-xl border transform transition-all duration-300 hover:scale-[1.01] max-w-3xl ${
+                    message.type === 'user'
+                      ? 'bg-gray-700/50 border-gray-600 text-gray-100 rounded-tr-sm'
+                      : 'bg-gray-700/50 border-gray-600 text-gray-100 rounded-tl-sm'
+                  }`}>
+                    <MarkdownLoader content={message.content} />
                   </div>
+                  <p className="text-[10px] text-gray-500 mt-2 font-mono uppercase tracking-widest">
+                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            ))}
 
-                  {/* Message Content */}
-                  <div className={`flex-1 max-w-3xl ${message.type === 'user' ? 'text-right' : ''
-                    }`}>
-                    <div className={`inline-block p-4 rounded-2xl shadow-lg transform hover:scale-[1.02] text-justify transition-all duration-300 ${message.type === 'bot'
-                        ? 'bg-gray-700/50 border border-gray-600 text-gray-100 rounded-tl-sm'
-                        : 'bg-gray-700/50 border border-gray-600 text-gray-100 rounded-tr-sm'
-                      }`}>
-                      <div>
-                        <MarkdownLoader content={message.content} />
-                      </div>
-                    </div>
-                    <p className={`text-xs text-gray-500 mt-2 ${message.type === 'user' ? 'text-right' : 'text-left'
-                      }`}>
-                      {message.timestamp.toLocaleTimeString()}
-                    </p>
+            {/* Typing Indicator */}
+            {isTyping && (
+              <div className="flex items-start space-x-4 animate-pulse">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                  <Bot className="h-5 w-5 text-white" />
+                </div>
+                <div className="inline-block p-4 bg-gray-700/50 border border-gray-600 rounded-2xl rounded-tl-sm shadow-xl">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                   </div>
                 </div>
-              ))}
-
-              {/* Typing Indicator */}
-              {isTyping && (
-                <div className="flex items-start space-x-4">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center animate-pulse">
-                    <Bot className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="inline-block p-4 bg-gray-700/50 border border-gray-600 rounded-2xl rounded-tl-sm">
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Input Area */}
-            <div className="border-t border-gray-700 p-6 bg-gray-800/50 backdrop-blur-sm rounded-b-2xl">
-              <form onSubmit={handleSendMessage} className="flex space-x-4">
-                <div className="flex-1 relative group">
-                  <Code className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 group-hover:text-blue-400 transition-colors duration-300" />
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Ask anything about your codebase..."
-                    className="w-full pl-12 pr-4 py-4 bg-gray-700/50 border border-gray-600 text-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10"
-                    disabled={isTyping}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={!inputMessage.trim() || isTyping}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white p-4 rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg hover:shadow-blue-500/25 flex items-center justify-center min-w-[60px]"
-                >
-                  <Send className="h-5 w-5" />
-                </button>
-              </form>
-
-              {/* Quick Actions
-              <div className="mt-4 flex flex-wrap gap-2">
-                {[
-                  "How does authentication work?",
-                  "Show me the main components",
-                  "What are the key functions?",
-                  "Explain the project structure"
-                ].map((suggestion, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setInputMessage(suggestion)}
-                    className="px-3 py-2 text-sm bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 hover:text-white rounded-lg border border-gray-600 hover:border-gray-500 transition-all duration-300 hover:scale-105"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div> */}
-            </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} className="h-4" />
           </div>
         </div>
-      </div>
 
-      {/* Info Footer */}
-      <div className="fixed bottom-4 right-4 z-50">
-        <div className="bg-gray-800/90 backdrop-blur-sm border border-gray-700 rounded-lg p-3 text-sm text-gray-400 animate-fade-in">
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span>AI Assistant Active</span>
+        {/* Floating Input Area */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 p-6 bg-gradient-to-t from-gray-900 via-gray-900/90 to-transparent">
+          <div className="max-w-3xl mx-auto flex items-end space-x-4">
+            <form onSubmit={handleSendMessage} className="flex-1 flex space-x-4 bg-gray-800/80 backdrop-blur-xl p-2 rounded-3xl border border-gray-700 shadow-2xl transition-all">
+              <div className="flex-1 relative group flex items-center pl-4">
+                <Code className="text-gray-400 h-5 w-5 group-hover:text-blue-400 transition-colors" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  placeholder="Ask anything about your codebase..."
+                  className="w-full pl-3 pr-4 py-3 bg-transparent border-none text-white focus:ring-0 focus:outline-none placeholder-gray-500"
+                  disabled={isTyping}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!inputMessage.trim() || isTyping}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white p-3 rounded-2xl transition-all disabled:opacity-30 flex items-center justify-center shadow-lg"
+              >
+                <Send className="h-5 w-5" />
+              </button>
+            </form>
+            
+            {showScrollButton && (
+              <button
+                onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                className="mb-1 bg-gray-800/80 backdrop-blur-xl p-4 rounded-full border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-all shadow-2xl animate-in zoom-in fade-in duration-300"
+                title="Scroll to Bottom"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </button>
+            )}
           </div>
+          <p className="text-center text-[10px] text-gray-600 mt-4 font-medium uppercase tracking-[0.3em]">
+            Powered by Groq • CodeRAG AI
+          </p>
         </div>
-      </div>
+      </main>
 
       <style jsx='true'>{`
-        @keyframes gradient-x {
-          0%, 100% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-        }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-20px); }
-        }
-        @keyframes glow {
-          0%, 100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.3); }
-          50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.6), 0 0 30px rgba(59, 130, 246, 0.4); }
-        }
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slide-in-up {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes gradient-x { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.3); } 50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.6), 0 0 30px rgba(59, 130, 246, 0.4); } }
+        @keyframes slide-in-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         .animate-gradient-x { animation: gradient-x 15s ease infinite; }
         .animate-float { animation: float 6s ease-in-out infinite; }
         .animate-glow { animation: glow 3s ease-in-out infinite; }
-        .animate-fade-in { animation: fade-in 1s ease-out; }
-        .scrollbar-thin {
-          scrollbar-width: thin;
-        }
-        .scrollbar-thumb-gray-600::-webkit-scrollbar-thumb {
-          background-color: #4B5563;
-          border-radius: 0.375rem;
-        }
-        .scrollbar-track-gray-800::-webkit-scrollbar-track {
-          background-color: #1F2937;
-        }
-        .scrollbar-thin::-webkit-scrollbar {
-          width: 6px;
-        }
+        .animate-slide-in-up { animation: slide-in-up 0.5s ease-out forwards; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
   );

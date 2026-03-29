@@ -28,12 +28,12 @@ def get_neighbors(node_id: str, session_id: str) -> str:
                 session_id=session_id
             )
 
-            records = list(result)
+            records = list(result)[:5]  # Limit to 5 neighbors
 
             if not records:
                 return f"No neighbors found for node '{node_id}'. The node may not exist or has no connections in this session."
 
-            parts = [f"Neighbors of node '{node_id}' ({len(records)} found):\n"]
+            parts = [f"Neighbors of node '{node_id}' (showing top {len(records)}):\n"]
 
             for record in records:
                 m = record["m"]
@@ -53,7 +53,7 @@ def get_neighbors(node_id: str, session_id: str) -> str:
                     f"  Name         : {name}\n"
                     f"  Type         : {ast_type}\n"
                     f"  File         : {file_path}\n"
-                    f"  Code         : {code_str[:500]}"
+                    f"  Code         : {code_str[:300]}..."
                 )
                 parts.append(block)
 
