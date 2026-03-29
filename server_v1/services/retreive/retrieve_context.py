@@ -7,7 +7,7 @@ from fastapi import HTTPException
 logger = get_logger(__name__)
 neo4j_driver = get_neo4j_driver()
 
-CONTEXT_THRESHOLD = 6000
+CONTEXT_THRESHOLD = 12000
 
 def retrieve_context(query: str, session_id: str, k: int = 10) -> str:
     """
@@ -26,23 +26,26 @@ def retrieve_context(query: str, session_id: str, k: int = 10) -> str:
         with neo4j_driver.session(database=db_name) as session:
 
             logger.info(f"Searching for nodes in session: {session_id}")
-            
-            # --- KEY CHANGE 2: Replaced gds.similarity.cosine with vector.similarity.cosine ---
-            # Neo4j Aura Free doesn't have GDS installed, but has native vector math.
+
+            # Use db.index.vector.queryNodes — the correct Neo4j procedure for
+            # ANN vector search. The inline vector.similarity.cosine() requires
+            # embeddings stored as a special Neo4j vector type, but this procedure
+            # works with plain Python lists passed via the driver.
+            # We over-fetch by 5× so that after session_id filtering we still
+            # get at least k results.
             result = session.run(
                 """
-                MATCH (node:CodeNode)
-                WHERE node.session_id = $session_id 
-                  AND node.embedding IS NOT NULL
-                WITH node, 
-                     vector.similarity.cosine(node.embedding, $query_vector) AS score
+                CALL db.index.vector.queryNodes('code_embeddings', $candidate_k, $query_vector)
+                YIELD node, score
+                WHERE node.session_id = $session_id
                 RETURN node, score
                 ORDER BY score DESC
                 LIMIT $k
                 """,
                 session_id=session_id,
                 query_vector=query_embedding,
-                k=k
+                k=k,
+                candidate_k=k * 5,
             )
             
             records = list(result)

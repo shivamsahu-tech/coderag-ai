@@ -16,7 +16,7 @@ if not JINA_API_KEY:
 # --- Config ---------------------------------------------------------------
 _BATCH_SIZE = 50          # chunks per top-level batch
 _INTER_BATCH_DELAY_S = 1  # seconds between top-level batches (TPM pacing)
-_EMBEDDING_DIM = 1024     # jina-code-embeddings-1.5b output dimension
+_EMBEDDING_DIM = 1536     # jina-code-embeddings-1.5b actual output dimension (confirmed from logs)
 # --------------------------------------------------------------------------
 
 

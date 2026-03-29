@@ -187,7 +187,7 @@ export default function ChatPage() {
                   {/* Message Content */}
                   <div className={`flex-1 max-w-3xl ${message.type === 'user' ? 'text-right' : ''
                     }`}>
-                    <div className={`inline-block p-4 rounded-2xl shadow-lg transform hover:scale-[1.02] transition-all duration-300 ${message.type === 'bot'
+                    <div className={`inline-block p-4 rounded-2xl shadow-lg transform hover:scale-[1.02] text-justify transition-all duration-300 ${message.type === 'bot'
                         ? 'bg-gray-700/50 border border-gray-600 text-gray-100 rounded-tl-sm'
                         : 'bg-gray-700/50 border border-gray-600 text-gray-100 rounded-tr-sm'
                       }`}>

@@ -20,16 +20,29 @@ The codebase is indexed as a dependency graph (via tree-sitter). Each node has:
 
 Embeddings are built from: name | ast_type | code_str | file.
 
-HOW TO ANSWER:
-- YOU ARE FREE TO USE OR NOT USE THE TOOLS ACCORDING TO THE USER QUERY, YOU WILL SELECT THE BEST POSSIBLE TOOL TO ANSWER THE QUERY
-- IF YOU ARE NOT SATISFY WITH ANY TOOL RESPONSE, THEN YOU CAN AGAIN CALL TOOL WITH DIFFERENT PARAMETER TO PROVIDE BEST RESPONSE TO THE USER, MAX TOOL CALL 3
-- IF YOU ARE NOT ABLE TO ANSWER THE QUERY, THEN YOU CAN SAY I AM NOT ABLE TO ANSWER THE QUERY
-- DON'T ANSWER THE USER, IF HE IS ASKING ANY GENERALIZE QESTION THAT IS NOT RELATED WITH THE CODEBASE OR CODING.
-- YOU ARE FREE TO USER BEST APPROACH AND MODIFY THE USER'S QUERY ACCORDINGLY FOR BEST POSSIBLE RESPONSE.
+## RESPONSE QUALITY RULES
+- **Structure**: Use `##` (H2) for major sections and `###` (H3) for sub-points. Use `---` (horizontal rules) between logical sections.
+- **Formatting**: Use **bold** for emphasis, lists for steps/features, and `tables` for comparing multiple items, files, or nodes.
+- **Synthesize**: Answer the user's actual question — don't dump raw tool output. Add code snippets and file references (e.g., `path/to/file.py`) when explaining code.
+- **Graceful Fail**: If you genuinely cannot find the answer in the codebase, say so clearly.
 
-TOOL CALLING RULES (CRITICAL):
-- When calling a tool, output ONLY the tool call — nothing else.
-- Do NOT write "Let me check..." or any text before calling a tool.
+## HOW TO DECIDE WHEN TO USE TOOLS
+
+**Use tools** when the user asks about:
+- What code exists, how something works, where something is defined
+- Functions, classes, methods, files, imports, dependencies
+- Any technical question about the indexed codebase
+
+**BE THOROUGH (CRITICAL)**:
+- Do NOT stop at the first tool result if it's incomplete.
+- Always use `get_neighbors` after `retrieve_context` if you need to understand how a function is called or what it depends on.
+- Continue calling tools if you discover new function names or file paths that seem relevant.
+- You have a limit of **max 5 tool calls** per turn — use them to ensure your answer is complete and accurate.
+
+## TOOL CALLING RULES
+- When calling a tool, output ONLY the tool call — no text before or after.
+- Do NOT write "Let me check..." before a tool call.
+- Only call tools when the question is about the codebase.
 - Do NOT answer from memory. Always retrieve first.
 """
 
@@ -43,7 +56,7 @@ def build_agent_graph():
     llm = ChatGroq(
         model="llama-3.3-70b-versatile",
         temperature=0.0,
-        max_tokens=4096,  # Was 1000 — truncated responses were causing malformed tool JSON
+        max_tokens=2048,  # 4096 was consuming ~7600 tokens/call (63% of 12K TPM limit). 2048 allows 2 agent calls/min.
         api_key=os.getenv("GROQ_API_KEY"),
     )
 

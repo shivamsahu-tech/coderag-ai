@@ -138,7 +138,7 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                     FOR (n:CodeNode)
                     ON n.embedding
                     OPTIONS {indexConfig: {
-                        `vector.dimensions`: 1024,
+                        `vector.dimensions`: 1536,
                         `vector.similarity_function`: 'cosine'
                     }}
                     """
