@@ -59,7 +59,7 @@ def extract_all_nodes(repo_path: str) -> List[Dict]:
 
     all_nodes.append(root_node)
     
-    logger.info(f"Starting enhanced extraction from {repo_path}")
+    logger.info(f"Initializing comprehensive file traversal and syntax extraction for {os.path.basename(repo_path)}...")
     
     for root, dirs, files in os.walk(repo_path):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
@@ -105,6 +105,7 @@ def extract_all_nodes(repo_path: str) -> List[Dict]:
                 except Exception as e:
                     logger.error(f"Failed to read {file_path}: {e}")
     
+    logger.info(f"AST extraction phase complete. Discovered {len(all_nodes)} distinct code elements across repository.")
     
     all_nodes = resolve_imports_to_node_ids(all_nodes, repo_path)
     

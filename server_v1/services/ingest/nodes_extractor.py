@@ -62,7 +62,7 @@ def make_base_node(
 def extract_nodes_from_file(file_path: str, language: str, root_node_id: str) -> List[Dict]:
 
     try:
-        logger.info(f"Processing file {file_path}")
+        logger.info(f"Extracting Abstract Syntax Tree (AST) components from: {file_path.split('/')[-1]}")
         with open(file_path, 'rb') as f:
             code = f.read()
         code_str = code.decode('utf-8', errors='ignore')
@@ -243,6 +243,7 @@ def extract_nodes_from_file(file_path: str, language: str, root_node_id: str) ->
                     if def_node_id not in chunk["relationships"]["class_call"]:
                         chunk["relationships"]["class_call"].append(def_node_id)
 
+    logger.info(f"Compiled {len(all_nodes)} structural CodeNodes from {file_path.split('/')[-1]}")
     return all_nodes
 
 

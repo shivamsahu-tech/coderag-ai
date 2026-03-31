@@ -141,7 +141,7 @@ def resolve_imports_to_node_ids(all_nodes: List[Dict], repo_path: str) -> List[D
                 file_to_nodes[relative_path] = []
             file_to_nodes[relative_path].append(node)
     
-    logger.info(f"Resolving imports across {len(file_to_nodes)} files...")
+    logger.info(f"Compiling project-wide semantic dependency graph across {len(file_to_nodes)} source files...")
     
     # Process each node that has imports
     for node in all_nodes:
@@ -172,7 +172,7 @@ def resolve_imports_to_node_ids(all_nodes: List[Dict], repo_path: str) -> List[D
             )
             
             if not resolved_file:
-                logger.warning(f"Could not resolve import '{module}' from {current_file}")
+                logger.warning(f"Could not resolve internal module target '{module}' dynamically")
                 import_info['is_external'] = False
                 import_info['resolved_node_ids'] = []
                 import_info['resolution_failed'] = True
@@ -183,7 +183,7 @@ def resolve_imports_to_node_ids(all_nodes: List[Dict], repo_path: str) -> List[D
             imported_file_nodes = file_to_nodes.get(resolved_file, [])
             
             if not imported_file_nodes:
-                logger.warning(f"No nodes found for resolved file: {resolved_file}")
+                logger.warning(f"No valid AST nodes found for dependency tracking in: {resolved_file}")
                 import_info['is_external'] = False
                 import_info['resolved_node_ids'] = []
                 import_info['resolution_failed'] = True
@@ -196,7 +196,6 @@ def resolve_imports_to_node_ids(all_nodes: List[Dict], repo_path: str) -> List[D
                 
                 # Debug: Log available nodes if nothing found
                 if not resolved_node_ids:
-                    logger.warning(f"Could not find items {items} in {resolved_file}")
                     logger.debug(f"Available nodes in {resolved_file}:")
                     for n in imported_file_nodes[:10]:  # Show first 10 nodes
                         logger.debug(f"  - {n.get('name')} ({n.get('ast_type')})")
@@ -216,5 +215,5 @@ def resolve_imports_to_node_ids(all_nodes: List[Dict], repo_path: str) -> List[D
         # Update the node with resolved imports
         node['relationships']['imports_from'] = resolved_imports
     
-    logger.info("Import resolution complete!")
+    logger.info("Semantic import and dependency resolution successfully finalized! 🔗")
     return all_nodes
