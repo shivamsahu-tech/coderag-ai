@@ -50,6 +50,7 @@ export default function Landing() {
       } else {
         console.error("Error processing repo:", res.detail);
         alert(`Please try again or contact with the maintainer | Error : ${res.detail}`);
+        setIsLoading(false);
       }
     } catch (error) {
       console.error("Network error:", error);
