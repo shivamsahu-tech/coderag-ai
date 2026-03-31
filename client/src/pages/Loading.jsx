@@ -51,7 +51,7 @@ const progressSteps = [
   useEffect(() => {
     if (!reqId) return;
     const serverUrl = import.meta.env.VITE_SERVER_URL || `http://${window.location.host}`;
-    const wsUrl = `${serverUrl.replace('http', 'ws')}/api/ws/logs/${reqId}`;
+    const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/api/ws/logs/${reqId}`;
     
     const ws = new WebSocket(wsUrl);
     
