@@ -5,8 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.ingest import router as ingest_router
 from api.retreive import router as retreive_router
+from api.ws import router as ws_router
 from db.neo4j_client import get_neo4j_driver
 from core.logging import get_logger
+from core.websocket import manager
 
 logger = get_logger("keepalive")
 
@@ -31,6 +33,8 @@ async def ping_neo4j_keepalive():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Retrieve main asyncio loop for synchronous handlers to dispatch async websocket updates
+    manager.loop = asyncio.get_running_loop()
     # Startup: Start keepalive task
     keepalive_task = asyncio.create_task(ping_neo4j_keepalive())
     yield
@@ -51,9 +55,8 @@ app.add_middleware(
 # Register Routes
 app.include_router(ingest_router, prefix="/api/ingest")
 app.include_router(retreive_router, prefix="/api/retreive")
-
+app.include_router(ws_router, prefix="/api/ws")
 
 @app.get("/")
 def home():
     return {"message" : "Coderag Services is Running"}
-

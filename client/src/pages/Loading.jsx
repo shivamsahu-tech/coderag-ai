@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Copy } from "lucide-react";
 
-export default function LoadingPage({sessionId}) {
+export default function LoadingPage({sessionId, reqId}) {
   const [currentGif, setCurrentGif] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
   const [processLine, setProcessLine] = useState(".....");
   const [copied, setCopied] = useState(false);
   const navigator = useNavigate()
-
+  const receivedWsLabelRef = useRef(false);
 
   const gifUrls = [
     "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExZGc4cThtOGZ4eTI1Ymd5aDF1MmZzejN4MXEyMzNvYmE4amQ1enB1eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EMi5WGu5ld8HTRJ0iK/giphy.gif",
@@ -40,13 +40,42 @@ const progressSteps = [
   "if it takes too long, contact for support",
 ];
 
+  const [logs, setLogs] = useState([]);
+  const logsEndRef = useRef(null);
+  
+  // Auto-scroll to bottom of terminal when new logs arrive
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  useEffect(() => {
+    if (!reqId) return;
+    const serverUrl = import.meta.env.VITE_SERVER_URL || `http://${window.location.host}`;
+    const wsUrl = `${serverUrl.replace('http', 'ws')}/api/ws/logs/${reqId}`;
+    
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onmessage = (event) => {
+      receivedWsLabelRef.current = true;
+      setLogs((prev) => [...prev, event.data]);
+      setProcessLine(event.data);
+    };
+
+    return () => ws.close();
+  }, [reqId]);
+
   useEffect(() => { 
     let step = 0;
     const interval = setInterval(() => {
-      setProcessLine(progressSteps[step%progressSteps.length]);
-      step++;
-      if(step >= progressSteps.length) clearInterval(interval);
+      if (!receivedWsLabelRef.current) {
+        setProcessLine(progressSteps[step%progressSteps.length]);
+        step++;
+        if(step >= progressSteps.length) clearInterval(interval);
+      } else {
+        clearInterval(interval);
+      }
     }, 3000)
+    return () => clearInterval(interval);
   }, []);
 
   const handleCopy = () => {
@@ -192,11 +221,45 @@ const progressSteps = [
                 </div>
               </div>
 
-            <p
-              className="text-white font-semibold mt-5"
-            >
-              {processLine}
-            </p>
+            {/* Terminal Window */}
+            {receivedWsLabelRef.current && (
+              <div className="mt-8 w-full max-w-2xl mx-auto bg-[#0d1117]/90 backdrop-blur-md rounded-xl border border-blue-500/30 shadow-2xl overflow-hidden font-mono text-xs relative">
+                {/* Terminal Header */}
+                <div className="bg-[#161b22] px-4 py-2 flex items-center justify-between border-b border-blue-500/30">
+                  <div className="flex space-x-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-500/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-sm shadow-yellow-500/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm shadow-green-500/50"></div>
+                  </div>
+                  <div className="text-gray-400 font-semibold tracking-wider">server-logs ~ bash</div>
+                  <div className="w-12"></div>
+                </div>
+                
+                {/* Terminal Body */}
+                <div className="p-4 h-64 overflow-y-auto w-full flex flex-col items-start text-left space-y-1 scrollbar-thin scrollbar-thumb-gray-700">
+                  {logs.map((log, i) => {
+                     const match = log.match(/^([A-Z]+):\s+\[(.*?)\]\s+(.*)$/);
+                     if (match) {
+                       return (
+                         <div key={i} className="text-gray-300 w-full break-all whitespace-pre-wrap">
+                           <span className={match[1] === 'ERROR' ? 'text-red-400' : match[1] === 'WARNING' ? 'text-yellow-400' : 'text-blue-400 font-bold'}>{match[1]}</span>
+                           <span className="text-gray-500 ml-2">[{match[2]}]</span>
+                           <span className="text-green-400 ml-2">{match[3]}</span>
+                         </div>
+                       )
+                     }
+                     return <div key={i} className="text-gray-300 w-full break-all whitespace-pre-wrap">{log}</div>;
+                  })}
+                  <div ref={logsEndRef} />
+                </div>
+              </div>
+            )}
+            
+            {!receivedWsLabelRef.current && (
+              <p className="text-blue-400 font-semibold mt-5 animate-pulse">
+                {processLine}
+              </p>
+            )}
 
 
               {/* Loading dots with purple-blue gradient */}

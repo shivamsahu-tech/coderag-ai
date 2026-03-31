@@ -9,6 +9,7 @@ export default function Landing() {
   const [repoUrl, setRepoUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState("")
+  const [reqId, setReqId] = useState("")
   const navigate = useNavigate()
 
   // useEffect(() => {
@@ -22,6 +23,8 @@ export default function Landing() {
 
   const processRepo = async () => {
     if (!repoUrl) return;
+    const newReqId = Date.now().toString() + Math.random().toString(36).substring(7);
+    setReqId(newReqId);
     setIsLoading(true);
     try {
       const url = `${import.meta.env.VITE_SERVER_URL}/api/ingest`
@@ -30,7 +33,7 @@ export default function Landing() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ repo_url: repoUrl })
+        body: JSON.stringify({ repo_url: repoUrl, req_id: newReqId })
       });
 
       const res = await result.json();
@@ -56,7 +59,7 @@ export default function Landing() {
 
   return (
     isLoading ? (
-      <LoadingPage sessionId={sessionId} />
+      <LoadingPage sessionId={sessionId} reqId={reqId} />
     ) : (
       <div className="min-h-screen bg-gray-900 relative overflow-hidden">
         <WelcomeModal />

@@ -71,44 +71,41 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                     })
 
     try:
-        # preparing text chunk for embedding
-        text_chunks = []
-        for node_data in flattened:
-            text_parts = []
-            if node_data.get("name"):
-                text_parts.append(f"Name: {node_data['name']}")
-            if node_data.get("ast_type"):
-                text_parts.append(f"Type: {node_data['ast_type']}")
-            if node_data.get("code_str"):
-                text_parts.append(f"Code: {node_data['code_str']}")
-            if node_data.get("file"):
-                text_parts.append(f"File: {node_data['file']}")
-            
-            text_chunk = " | ".join(text_parts)
-            text_chunks.append(text_chunk)
-        
-        logger.info(f"Generating embeddings for {len(text_chunks)} nodes...")
-        embeddings = get_embeddings(text_chunks)
-        
-        if embeddings and len(embeddings) == len(flattened):
-            for i, node_data in enumerate(flattened):
-                node_data["embedding"] = embeddings[i]
-            logger.info("Embeddings generated successfully.")
-        else:
-            logger.warning("Failed to generate embeddings or count mismatch. Storing nodes without embeddings.")
-
         # --- KEY CHANGE 1: Grab the database name from your .env ---
         db_name = os.getenv("NEO4J_DATABASE", "neo4j")
 
         # --- KEY CHANGE 2: Inject the database name into the session ---
         with neo4j_driver.session(database=db_name) as session:
 
-            # --- Chunked node writes (avoid OOM on Aura free 512MB) ---
+            # --- Chunked node writes WITH INLINE EMBEDDINGS (avoid OOM on Server) ---
             total_chunks = (len(flattened) + _NEO4J_WRITE_CHUNK - 1) // _NEO4J_WRITE_CHUNK
             for chunk_i in range(0, len(flattened), _NEO4J_WRITE_CHUNK):
                 chunk = flattened[chunk_i : chunk_i + _NEO4J_WRITE_CHUNK]
                 chunk_num = chunk_i // _NEO4J_WRITE_CHUNK + 1
-                logger.info(f"Writing node chunk {chunk_num}/{total_chunks} ({len(chunk)} nodes)...")
+                
+                # 1. Prepare text chunks purely for this batch
+                text_chunks = []
+                for node_data in chunk:
+                    text_parts = []
+                    if node_data.get("name"): text_parts.append(f"Name: {node_data['name']}")
+                    if node_data.get("ast_type"): text_parts.append(f"Type: {node_data['ast_type']}")
+                    if node_data.get("code_str"): text_parts.append(f"Code: {node_data['code_str']}")
+                    if node_data.get("file"): text_parts.append(f"File: {node_data['file']}")
+                    text_chunks.append(" | ".join(text_parts))
+                
+                # 2. Generate embeddings just for this tiny batch
+                logger.info(f"Generating AI embeddings for block {chunk_num}/{total_chunks} ({len(text_chunks)} chunks)...")
+                embeddings = get_embeddings(text_chunks)
+                
+                # 3. Temporarily inject embeddings into the dictionary chunk
+                if embeddings and len(embeddings) == len(chunk):
+                    for i, node_data in enumerate(chunk):
+                        node_data["embedding"] = embeddings[i]
+                else:
+                    logger.warning(f"Failed to generate embeddings for block {chunk_num}. Storing without embeddings.")
+
+                # 4. Save to DB
+                logger.info(f"Storing structural nodes in Graph Database ({chunk_num}/{total_chunks})...")
                 session.run(
                     """
                     UNWIND $nodes AS node
@@ -119,6 +116,12 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                     nodes=chunk,
                     session_id=session_id,
                 )
+                
+                # 5. IMMEDIATELY purge the massive arrays from memory
+                for node_data in chunk:
+                    node_data.pop("embedding", None)
+                del text_chunks
+                del embeddings
 
             # Add AST labels
             session.run(
@@ -143,7 +146,7 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                     }}
                     """
                 )
-                logger.info("Vector index created or already exists (dim=1024).")
+                logger.info("Building vector search index...")
             except Exception as e:
                 logger.warning(f"Vector index creation warning (may already exist): {e}")
 
@@ -153,7 +156,7 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                 for chunk_i in range(0, len(relationship_edges), _NEO4J_WRITE_CHUNK):
                     chunk = relationship_edges[chunk_i : chunk_i + _NEO4J_WRITE_CHUNK]
                     chunk_num = chunk_i // _NEO4J_WRITE_CHUNK + 1
-                    logger.info(f"Writing relationship chunk {chunk_num}/{total_rel_chunks} ({len(chunk)} edges)...")
+                    logger.info(f"Mapping code relationships in Graph Database ({chunk_num}/{total_rel_chunks})...")
                     session.run(
                         """
                         UNWIND $edges AS edge
@@ -166,7 +169,7 @@ def store_nodes_in_neo4j(nodes: List[Dict], session_id: str):
                         session_id=session_id,
                     )
 
-            logger.info("Stored nodes + embeddings + all relationship types successfully.")
+            logger.info("Successfully indexed entire codebase into vector and graph databases! 🎉")
 
     except Exception as e:
         logger.error(f"Failed in store_nodes_in_neo4j: {e}")
