@@ -2,20 +2,14 @@ from core.logging import get_logger
 from services.ingest.repo_handler import clone_repo, cleanup_repo
 from services.ingest.file_traversal import extract_all_nodes
 from services.ingest.storage import store_nodes_in_neo4j
+from fastapi import HTTPException
 import uuid
 
 logger = get_logger(__name__)
 
 def run_ingest_pipeline(repo_url: str):
-    logger.info("Initializing ingestion pipeline...")
-    session_id, repo_path = clone_repo(repo_url)
-    
-from fastapi import HTTPException
-
-# ... existing code ...
-
-def run_ingest_pipeline(repo_url: str):
-    logger.info("Initializing ingestion pipeline...")
+    repo_name = repo_url.split('/')[-1].replace('.git', '')
+    logger.info(f"Initializing ingestion pipeline for repository: {repo_name} ({repo_url})")
     session_id, repo_path = clone_repo(repo_url)
     
     logger.info("Commencing deep code extraction & file traversal...")

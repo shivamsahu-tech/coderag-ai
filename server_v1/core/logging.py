@@ -26,7 +26,8 @@ def get_logger(name: str):
 
         handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(
-            '%(levelname)s:     [%(name)s] %(message)s'
+            '%(asctime)s - %(levelname)s: [%(name)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -34,5 +35,27 @@ def get_logger(name: str):
         ws_handler = WebSocketLogHandler()
         ws_handler.setFormatter(formatter)
         logger.addHandler(ws_handler)
+        
+        # Axiom Remote Logging integration
+        import os
+        axiom_token = os.getenv("AXIOM_TOKEN")
+        axiom_dataset = os.getenv("AXIOM_DATASET")
+        
+        if axiom_token and axiom_dataset:
+            try:
+                import axiom_py
+                from axiom_py.logging import AxiomHandler
+                
+                # Instantiate Axiom client and handler
+                axiom_client = axiom_py.Client(token=axiom_token)
+                axiom_handler = AxiomHandler(axiom_client, axiom_dataset)
+                axiom_handler.setFormatter(formatter)
+                
+                logger.addHandler(axiom_handler)
+                print(f"✅ Axiom remote logging successfully connected to dataset: {axiom_dataset}")
+            except ImportError:
+                print("⚠️ axiom-py is not installed. Skipping remote logging.")
+            except Exception as e:
+                print(f"❌ Failed to attach Axiom logger: {e}")
     
     return logger

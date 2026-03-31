@@ -40,7 +40,7 @@ export default function WelcomeModal() {
             <div className="space-y-4 text-sm text-gray-300">
               <div className="flex gap-3">
                 <span className="text-blue-400 font-bold">1.</span>
-                <p><span className="text-white font-semibold">Note:</span> This project doesn't require auth. Please <span className="text-blue-300">avoid ingesting very large repositories, because we are working on free tier.</span>.</p>
+                <p><span className="text-white font-semibold">Note:</span> This project doesn't require auth. Please <span className="text-blue-300">avoid ingesting very large repositories because we are working on a free tier. We strictly process repositories with less than 2000 nodes (approx 10,000 lines of code)</span>.</p>
               </div>
 
               {/* <div className="flex gap-3">
@@ -65,6 +65,11 @@ export default function WelcomeModal() {
                     </button>
                   </div>
                 </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="text-blue-400 font-bold">3.</span>
+                <p><span className="text-white font-semibold">Supported Languages:</span> We currently support <span className="text-blue-300">JavaScript, TypeScript, and Python</span> repositories.</p>
               </div>
 
               <div className="flex gap-3">

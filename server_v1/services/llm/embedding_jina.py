@@ -31,8 +31,8 @@ def _sanitize(text: str) -> str:
     return text.strip() or "<empty>"
 
 
-def _single_request(chunks: list[str], task_type: str) -> requests.Response:
-    """One POST to Jina with a single 429-aware retry (no 400 retry — caller handles that)."""
+def _single_request(chunks: list[str], task_type: str, max_retries: int = 4) -> requests.Response:
+    """One POST to Jina with multi-attempt retry logic for 429 rate limits and 104 TCP resets."""
     url = "https://api.jina.ai/v1/embeddings"
     headers = {
         "Content-Type": "application/json",
@@ -44,12 +44,25 @@ def _single_request(chunks: list[str], task_type: str) -> requests.Response:
         "truncate": True,
         "input": chunks,
     }
-    resp = requests.post(url, json=payload, headers=headers, timeout=90)
-    if resp.status_code == 429:
-        logger.warning("Rate-limited by Jina. Sleeping 60s then retrying...")
-        time.sleep(60)
-        resp = requests.post(url, json=payload, headers=headers, timeout=90)
-    return resp
+    
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=90)
+            
+            if resp.status_code == 429:
+                logger.warning(f"Rate-limited by Jina API on attempt {attempt+1}/{max_retries}. Sleeping 60s then retrying...")
+                time.sleep(60)
+                continue
+                
+            return resp
+            
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Network Connection dropped by Jina API ({e}). Retrying attempt {attempt+1}/{max_retries} in 10 seconds...")
+            time.sleep(10)
+    
+    # If all generic retries fail, execute a final one that will raise naturally
+    logger.error("Final network retry attempt initiating...")
+    return requests.post(url, json=payload, headers=headers, timeout=90)
 
 
 def _embed_with_bisect(chunks: list[str], task_type: str) -> list[list[float]]:
