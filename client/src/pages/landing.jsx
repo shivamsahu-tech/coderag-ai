@@ -27,7 +27,11 @@ export default function Landing() {
     setReqId(newReqId);
     setIsLoading(true);
     try {
-      const url = `${import.meta.env.VITE_SERVER_URL}/api/ingest`
+      const baseUrl = (import.meta.env.VITE_SERVER_URL || `http://${window.location.host}`).replace(/\/$/, "");
+      const url = `${baseUrl}/api/ingest/`;
+      console.log("[Landing] Constructing ingest URL:", url);
+      console.log("[Landing] Req ID:", newReqId, "Repo URL:", repoUrl);
+      
       const result = await fetch(url, {
         method: "POST",
         headers: {
@@ -35,6 +39,7 @@ export default function Landing() {
         },
         body: JSON.stringify({ repo_url: repoUrl, req_id: newReqId })
       });
+      console.log("[Landing] Fetch response status:", result.status, result.statusText);
 
       const res = await result.json();
 

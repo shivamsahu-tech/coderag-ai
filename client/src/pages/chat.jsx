@@ -47,7 +47,8 @@ export default function ChatPage() {
   }, [messages, showScrollButton]);
 
   const chat = async (query) => {
-    const url = `${import.meta.env.VITE_SERVER_URL}/api/retreive`;
+    const baseUrl = (import.meta.env.VITE_SERVER_URL || `http://${window.location.host}`).replace(/\/$/, "");
+    const url = `${baseUrl}/api/retreive`;
     try {
       const result = await fetch(url, {
         method: "POST",

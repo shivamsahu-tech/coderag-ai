@@ -49,19 +49,40 @@ const progressSteps = [
   }, [logs]);
 
   useEffect(() => {
-    if (!reqId) return;
+    if (!reqId) {
+      console.log("[Loading] No reqId provided, skipping WebSocket connection.");
+      return;
+    }
     const serverUrl = import.meta.env.VITE_SERVER_URL || `http://${window.location.host}`;
-    const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/api/ws/logs/${reqId}`;
+    const cleanServerUrl = serverUrl.replace(/\/$/, '');
+    const wsUrl = `${cleanServerUrl.replace(/^http/, 'ws')}/api/ws/logs/${reqId}`;
     
+    console.log("[Loading] Attempting WebSocket connection to:", wsUrl);
     const ws = new WebSocket(wsUrl);
     
+    ws.onopen = () => {
+      console.log("[Loading] WebSocket connection established successfully.");
+    };
+
     ws.onmessage = (event) => {
+      console.log("[Loading] WebSocket message received:", event.data);
       receivedWsLabelRef.current = true;
       setLogs((prev) => [...prev, event.data]);
       setProcessLine(event.data);
     };
 
-    return () => ws.close();
+    ws.onerror = (error) => {
+      console.error("[Loading] WebSocket error encountered:", error);
+    };
+
+    ws.onclose = (event) => {
+      console.log(`[Loading] WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`);
+    };
+
+    return () => {
+      console.log("[Loading] Cleaning up WebSocket connection.");
+      ws.close();
+    };
   }, [reqId]);
 
   useEffect(() => { 
