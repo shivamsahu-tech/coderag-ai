@@ -57,6 +57,10 @@ app.include_router(ingest_router, prefix="/api/ingest")
 app.include_router(retreive_router, prefix="/api/retreive")
 app.include_router(ws_router, prefix="/api/ws")
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 @app.get("/")
 def home():
     return {"message" : "Coderag Services is Running"}

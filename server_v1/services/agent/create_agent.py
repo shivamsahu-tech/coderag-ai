@@ -30,6 +30,8 @@ _MAX_ITERATIONS = 5  # max tool-call rounds per query
 
 SYSTEM_PROMPT = """You are an expert Codebase Assistant — a helpful, friendly AI that helps developers understand codebases.
 
+MASTER NOTE : DO NOT REPLY ANSWERS THAT ISN'T RELATED WITH THE REPO ASSISTANT, JUST REPLY THAT I AM A REPO ASSISTANT, SO PLEASE ASK RELATED QUESTIONS.
+
 ## TOKEN SAVING (CRITICAL)
 Your current rate limits are tight (12k tokens/min). 
 - BE CONCISE with your internal tool call queries.

@@ -12,7 +12,7 @@ export default function WelcomeModal() {
 
   if (!isOpen) return null;
 
-  const sessionId = import.meta.env.VITE_CODEBASE_SESSION_ID || "30e82929-e82f-4ed0-9463-2da67d8a5ea8";
+  const sessionId = import.meta.env.VITE_CODEBASE_SESSION_ID || "2fdd5b97-a84a-43ac-9170-a6e0f6e0c530";
 
   const handleStartChat = () => {
     if (!sessionId) return;
